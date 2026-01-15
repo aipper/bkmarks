@@ -94,6 +94,11 @@ app.post('/api/auth/register', async (c) => {
   return c.json({ ok: true, role: 'admin' })
 })
 
+app.get('/api/auth/registration', async (c) => {
+  const open = await isRegistrationOpen(c.env.KV)
+  return c.json({ open })
+})
+
 app.post('/api/auth/login', async (c) => {
   const body = await c.req.json()
   const username = (body?.username || '').trim()
