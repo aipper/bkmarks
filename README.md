@@ -1,0 +1,80 @@
+# Bkmarks 书签导航系统
+
+## 功能概述
+- Chrome 扩展读取书签并同步到服务端
+- Cloudflare Workers 提供账号登录、多用户、书签存储（R2）、链接有效性检测（Cron/接口）、导航 UI
+- URL 规范化与去重；规则生成基础 tags（后续可接入 AI 分类）
+
+## 目录结构
+- server：Cloudflare Workers 服务端（Hono + TypeScript）
+- extension：Chrome 扩展（Manifest v3）
+
+## 前置准备
+- Node.js 18+
+- Cloudflare 账号
+- Wrangler CLI
+  ```bash
+  npm i -D wrangler@4
+  ```
+
+## Cloudflare 资源与绑定
+1. 创建 KV 命名空间（在 Dashboard 或 wrangler）
+2. 创建 R2 存储桶：bkmarks-data
+3. 在 [server/wrangler.toml](file:///Users/ab/work/ai/bkmarks/server/wrangler.toml) 填入实际 `kv_namespaces.id` / `preview_id` 与 `r2_buckets.bucket_name`
+4. 设置环境变量：
+   - AI_DAILY_CALL_LIMIT_GLOBAL
+   - AI_DAILY_CALL_LIMIT_PER_USER
+   - ADMIN_RESET_TOKEN（用于安全维护接口）
+
+## 本地开发
+```bash
+cd server
+npm install
+npm run dev
+# 访问 http://localhost:8787/app
+```
+
+## 首次初始化与管理员
+- 首次注册的账号自动成为管理员，随后注册即关闭
+- 管理员创建新用户：`POST /api/admin/create-user`
+- 安全维护接口（需 `X-Admin-Reset-Token`）：
+  - 重置注册开关：`POST /api/system/reset-registration`
+  - 设置密码：`POST /api/system/set-password`
+
+## 扩展加载
+1. 打开 Chrome → 扩展程序 → 开发者模式
+2. “加载已解压的扩展程序”，选择 `extension` 目录
+3. 在扩展选项页填入服务端地址与账号密码
+4. 新增/删除书签后，扩展会调用 `/api/bookmarks/sync`
+
+## 部署到 Cloudflare Workers
+```bash
+cd server
+npx wrangler deploy
+```
+部署后，将你的 Worker 域名（如 `https://YOUR_WORKER.workers.dev`）填入扩展设置。
+
+快速跳转到 Cloudflare Workers 控制台：
+- https://dash.cloudflare.com/?to=/:account/workers
+
+## API 摘要
+- 认证：
+  - `POST /api/auth/register`（未初始化时开放）
+  - `POST /api/auth/login`
+  - `POST /api/auth/logout`
+  - `GET /api/auth/me`
+- 书签：
+  - `POST /api/bookmarks/sync`（扩展同步 created/changed/removed）
+  - `GET /api/bookmarks/list`
+- 链接检测：
+  - `POST /api/links/check?limit=20`
+- 管理：
+  - `POST /api/admin/create-user`
+  - `POST /api/system/reset-registration`（需要令牌）
+  - `POST /api/system/set-password`（需要令牌）
+
+## 注意
+- R2/KV 绑定必须在 wrangler.toml 与 Dashboard 配置一致
+- Workers AI 接入（分类）建议按照每日调用配额进行自我限流
+- 生产环境请将 `ADMIN_RESET_TOKEN` 设置为高强度随机值
+

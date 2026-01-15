@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Bkmarks Sync",
+  "version": "1.0",
+  "permissions": ["bookmarks", "storage"],
+  "host_permissions": ["https://*/*", "http://*/*"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "options_page": "options.html"
+}

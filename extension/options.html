@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Bkmarks Sync Settings</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 16px; }
+      label { display: block; margin: 8px 0 4px; }
+      input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 8px; }
+      button { margin-top: 12px; padding: 10px 16px; border: none; border-radius: 8px; background: #007aff; color: #fff; }
+    </style>
+  </head>
+  <body>
+    <h1>同步设置</h1>
+    <label for="serverUrl">服务端地址</label>
+    <input id="serverUrl" placeholder="https://your-worker.example.com">
+    <label for="username">用户名</label>
+    <input id="username" placeholder="username">
+    <label for="password">密码</label>
+    <input id="password" type="password" placeholder="password">
+    <button id="save">保存</button>
+    <script src="options.js"></script>
+  </body>
+</html>
