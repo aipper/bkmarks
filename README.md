@@ -1,5 +1,9 @@
 # Bkmarks 书签导航系统
 
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/aipper/bkmarks)
+
+
+
 ## 功能概述
 - Chrome 扩展读取书签并同步到服务端
 - Cloudflare Workers 提供账号登录、多用户、书签存储（R2）、链接有效性检测（Cron/接口）、导航 UI
@@ -54,6 +58,11 @@ npx wrangler deploy
 ```
 部署后，将你的 Worker 域名（如 `https://YOUR_WORKER.workers.dev`）填入扩展设置。
 
+或使用上方的“一键部署到 Cloudflare”按钮（需要你的仓库是公开或对 Cloudflare 账户可见）：
+- 点开后，Cloudflare 会自动拉取该仓库并引导创建 Worker
+- 创建后在控制台为该 Worker 绑定 KV 与 R2（与 `wrangler.toml` 中的绑定名一致）
+- 设置环境变量（如 `ADMIN_RESET_TOKEN`、AI 配额等）
+
 快速跳转到 Cloudflare Workers 控制台：
 - https://dash.cloudflare.com/?to=/:account/workers
 
@@ -77,4 +86,3 @@ npx wrangler deploy
 - R2/KV 绑定必须在 wrangler.toml 与 Dashboard 配置一致
 - Workers AI 接入（分类）建议按照每日调用配额进行自我限流
 - 生产环境请将 `ADMIN_RESET_TOKEN` 设置为高强度随机值
-
