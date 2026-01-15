@@ -1,9 +1,231 @@
 export function html() {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Bkmarks</title><link rel="stylesheet" href="/static/app.css"></head><body><div id="app"><header class="topbar"><div class="brand">Bkmarks</div><input id="search" class="search" placeholder="搜索书签"><div id="user" class="user"></div></header><main><div id="tags" class="tags"></div><div id="content"><div id="register" class="panel hidden"><h2>注册</h2><input id="ru" placeholder="用户名"><input id="rp" type="password" placeholder="密码"><button id="registerBtn">注册</button></div><div id="login" class="panel hidden"><h2>登录</h2><input id="u" placeholder="用户名"><input id="p" type="password" placeholder="密码"><button id="loginBtn">登录</button></div><div id="list" class="grid"></div></div></main></div><script src="/static/app.js"></script></body></html>`
+  return `<!doctype html>
+  <html>
+    <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      <title>Bkmarks</title>
+      <link rel="stylesheet" href="/static/app.css">
+    </head>
+    <body>
+      <div id="app">
+        <header class="topbar">
+          <div class="brand">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <div class="brand-text">
+              <div class="brand-title">Bkmarks</div>
+              <div class="brand-subtitle">管理与导航</div>
+            </div>
+          </div>
+          <div class="search-wrap">
+            <input id="search" class="search" placeholder="搜索书签">
+          </div>
+          <div id="user" class="user"></div>
+        </header>
+        <main class="shell">
+          <aside class="sidebar">
+            <div class="section-title">标签</div>
+            <div id="tags" class="tags"></div>
+          </aside>
+          <section class="content">
+            <div id="content" class="content-body">
+              <div id="register" class="panel hidden">
+                <h2>注册</h2>
+                <input id="ru" placeholder="用户名">
+                <input id="rp" type="password" placeholder="密码">
+                <button id="registerBtn">注册</button>
+              </div>
+              <div id="login" class="panel hidden">
+                <h2>登录</h2>
+                <input id="u" placeholder="用户名">
+                <input id="p" type="password" placeholder="密码">
+                <button id="loginBtn">登录</button>
+              </div>
+              <div id="list" class="grid"></div>
+            </div>
+          </section>
+        </main>
+      </div>
+      <script src="/static/app.js"></script>
+    </body>
+  </html>`
 }
 
 export function css() {
-  return `:root{--bg:#f7f7f8;--card:#ffffff;--text:#1c1c1e;--muted:#6e6e73;--primary:#007aff;--border:#e5e5ea;--shadow:0 8px 24px rgba(0,0,0,0.08)}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif}header.topbar{display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--border)}.brand{font-weight:600;font-size:18px}.search{flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:12px;background:#fafafa}.search:focus{outline:2px solid rgba(0,122,255,0.3)}.user{min-width:120px;text-align:right;color:var(--muted)}main{padding:16px}.tags{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}.pill{padding:8px 12px;border:1px solid var(--border);border-radius:999px;background:#fafafa;color:#333;cursor:pointer}.pill.active{background:var(--primary);border-color:var(--primary);color:#fff}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px}.card{position:relative;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:6px;box-shadow:var(--shadow)}.status-dot{position:absolute;right:10px;top:10px;width:8px;height:8px;border-radius:50%}.status-ok{background:#34c759}.status-bad{background:#ff3b30}.title{font-weight:600}.url{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis}.panel{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:20px;max-width:380px;box-shadow:var(--shadow)}.panel h2{margin:0 0 12px 0;font-size:20px;font-weight:700}.panel input{width:100%;margin:8px 0;padding:12px;border:1px solid var(--border);border-radius:12px;background:#fafafa}.panel input:focus{outline:2px solid rgba(0,122,255,0.3)}.panel button{width:100%;margin-top:12px;padding:12px 16px;border:none;border-radius:12px;background:var(--primary);color:#fff;font-weight:600}.hidden{display:none}body.login main{min-height:calc(100vh - 56px);display:flex;align-items:center;justify-content:center}body.login #tags,body.login #list{display:none}`
+  return `:root{
+  --bg:#f5f6f8;
+  --bg-accent:#eef1f6;
+  --card:rgba(255,255,255,0.86);
+  --card-solid:#ffffff;
+  --text:#0f172a;
+  --muted:#475569;
+  --primary:#0a84ff;
+  --primary-strong:#0072ff;
+  --border:rgba(15,23,42,0.08);
+  --shadow:0 18px 40px rgba(15,23,42,0.12);
+  --radius:16px;
+}
+*{box-sizing:border-box}
+body{
+  margin:0;
+  background:radial-gradient(1200px 700px at 10% -20%,#ffffff 0%,var(--bg) 60%),linear-gradient(180deg,#ffffff 0%,var(--bg-accent) 100%);
+  color:var(--text);
+  font-family:"SF Pro Text","SF Pro Display","Helvetica Neue",Helvetica,Arial,sans-serif;
+}
+#app{min-height:100vh}
+header.topbar{
+  position:sticky;
+  top:0;
+  z-index:10;
+  display:flex;
+  align-items:center;
+  gap:16px;
+  padding:16px 24px;
+  background:rgba(255,255,255,0.86);
+  border-bottom:1px solid var(--border);
+  backdrop-filter:blur(18px);
+}
+.brand{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  min-width:200px;
+}
+.brand-mark{
+  width:36px;
+  height:36px;
+  border-radius:12px;
+  background:linear-gradient(145deg,#ffffff,#dfe7f6);
+  border:1px solid rgba(15,23,42,0.08);
+  box-shadow:0 10px 20px rgba(15,23,42,0.12);
+}
+.brand-title{font-weight:600;font-size:16px;letter-spacing:-0.01em}
+.brand-subtitle{font-size:12px;color:var(--muted)}
+.search-wrap{flex:1;display:flex;justify-content:center}
+.search{
+  width:min(520px,100%);
+  padding:12px 14px;
+  border:1px solid rgba(148,163,184,0.35);
+  border-radius:999px;
+  background:rgba(255,255,255,0.9);
+  font-size:14px;
+  transition:border-color 180ms ease,box-shadow 180ms ease;
+}
+.search:focus{outline:none;border-color:rgba(10,132,255,0.65);box-shadow:0 0 0 4px rgba(10,132,255,0.12)}
+.user{
+  min-width:120px;
+  text-align:right;
+  color:var(--muted);
+  font-size:13px;
+}
+.shell{
+  display:grid;
+  grid-template-columns:240px 1fr;
+  gap:20px;
+  padding:24px;
+}
+.sidebar{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:calc(var(--radius) + 2px);
+  padding:18px;
+  box-shadow:var(--shadow);
+  backdrop-filter:blur(16px);
+  height:fit-content;
+}
+.section-title{
+  font-size:12px;
+  font-weight:600;
+  letter-spacing:0.08em;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin-bottom:14px;
+}
+.tags{display:flex;flex-direction:column;gap:8px}
+.pill{
+  text-align:left;
+  padding:10px 14px;
+  border:1px solid rgba(148,163,184,0.18);
+  border-radius:12px;
+  background:rgba(255,255,255,0.8);
+  color:var(--text);
+  cursor:pointer;
+  transition:background 180ms ease,border-color 180ms ease,box-shadow 180ms ease;
+}
+.pill:hover{border-color:rgba(10,132,255,0.35)}
+.pill.active{
+  background:linear-gradient(135deg,var(--primary),var(--primary-strong));
+  border-color:var(--primary);
+  color:#fff;
+  box-shadow:0 12px 24px rgba(10,132,255,0.2);
+}
+.content-body{min-height:60vh}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+.card{
+  position:relative;
+  background:var(--card-solid);
+  border:1px solid var(--border);
+  border-radius:16px;
+  padding:14px 14px 16px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  box-shadow:0 10px 26px rgba(15,23,42,0.08);
+  transition:box-shadow 180ms ease,transform 180ms ease;
+}
+.card:hover{box-shadow:0 18px 32px rgba(15,23,42,0.14);transform:translateY(-2px)}
+.status-dot{position:absolute;right:12px;top:12px;width:8px;height:8px;border-radius:50%}
+.status-ok{background:#34c759}
+.status-bad{background:#ff3b30}
+.title{font-weight:600}
+.url{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.panel{
+  background:var(--card-solid);
+  border:1px solid var(--border);
+  border-radius:18px;
+  padding:22px;
+  max-width:380px;
+  box-shadow:var(--shadow);
+}
+.panel h2{margin:0 0 12px 0;font-size:20px;font-weight:700}
+.panel input{
+  width:100%;
+  margin:8px 0;
+  padding:12px;
+  border:1px solid rgba(148,163,184,0.35);
+  border-radius:12px;
+  background:#f8fafc;
+}
+.panel input:focus{outline:none;border-color:rgba(10,132,255,0.65);box-shadow:0 0 0 4px rgba(10,132,255,0.12)}
+.panel button{
+  width:100%;
+  margin-top:12px;
+  padding:12px 16px;
+  border:none;
+  border-radius:12px;
+  background:linear-gradient(135deg,var(--primary),var(--primary-strong));
+  color:#fff;
+  font-weight:600;
+  box-shadow:0 12px 24px rgba(10,132,255,0.25);
+}
+.hidden{display:none}
+body.login main.shell{
+  grid-template-columns:1fr;
+  justify-items:center;
+}
+body.login .sidebar,
+body.login #list{display:none}
+@media (max-width:960px){
+  header.topbar{flex-wrap:wrap}
+  .brand{min-width:auto}
+  .shell{grid-template-columns:1fr}
+  .sidebar{order:2}
+}
+@media (max-width:600px){
+  header.topbar{padding:14px 16px}
+  .shell{padding:16px}
+  .search-wrap{width:100%}
+}`
 }
 
 export function js() {
