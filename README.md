@@ -24,7 +24,7 @@
 ## Cloudflare 资源与绑定
 1. 创建 KV 命名空间（在 Dashboard 或 wrangler）
 2. 创建 R2 存储桶：bkmarks-data
-3. 在 [wrangler.toml](file:///Users/ab/work/ai/bkmarks/wrangler.toml) 填入实际 `kv_namespaces.id` / `preview_id` 与 `r2_buckets.bucket_name`
+3. 在 `wrangler.toml` 填入实际 `kv_namespaces.id` / `preview_id` 与 `r2_buckets.bucket_name`
 4. 设置环境变量：
    - AI_DAILY_CALL_LIMIT_GLOBAL
    - AI_DAILY_CALL_LIMIT_PER_USER
@@ -53,10 +53,8 @@ npm run dev
 
 ## 部署到 Cloudflare Workers
 ```bash
-# 方式一：仓库根目录（推荐）
+# 仓库根目录部署
 npx wrangler deploy
-# 方式二：在 server 目录中部署（兼容旧结构）
-cd server && npx wrangler deploy --config ../wrangler.toml
 ```
 部署后，将你的 Worker 域名（如 `https://YOUR_WORKER.workers.dev`）填入扩展设置。
 
