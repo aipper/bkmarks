@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { KVNamespace, R2Bucket } from '@cloudflare/workers-types'
 import { hashPassword, verifyPassword, randomId, getUser, putUser, getSession, putSession, delSession, parseCookies, makeCookie } from './auth'
-import { upsertBookmark, removeBookmark, listBookmarks } from './bookmarks'
+import { upsertBookmark, removeBookmark, listBookmarks, setAiTags, getBookmarkStats } from './bookmarks'
 import { loadStatus, saveStatus, checkUrl } from './status'
 import { html, css, js } from './ui'
 
@@ -37,7 +37,7 @@ app.get('/', (c) => {
 
 app.get('/api/config', (c) => {
   return c.json({
-    ai_enabled: true,
+    ai_enabled: Boolean(c.env.AI),
     limits: {
       global: c.env.AI_DAILY_CALL_LIMIT_GLOBAL,
       user: c.env.AI_DAILY_CALL_LIMIT_PER_USER
@@ -158,6 +158,95 @@ function requireAdmin(user: any) {
   return user && user.role === 'admin'
 }
 
+function todayKey() {
+  return new Date().toISOString().slice(0, 10)
+}
+
+async function getUsageCount(KV: KVNamespace, key: string) {
+  const v = await KV.get(key)
+  return v ? Number(v) : 0
+}
+
+async function incrementUsage(KV: KVNamespace, key: string) {
+  const current = await getUsageCount(KV, key)
+  const next = current + 1
+  await KV.put(key, String(next))
+  return next
+}
+
+async function canUseAI(KV: KVNamespace, userId: string, globalLimit: number, userLimit: number) {
+  const date = todayKey()
+  const gLimit = Number(globalLimit) || 0
+  const uLimit = Number(userLimit) || 0
+  if (gLimit > 0) {
+    const g = await getUsageCount(KV, `ai_usage:global:${date}`)
+    if (g >= gLimit) return false
+  }
+  if (uLimit > 0) {
+    const u = await getUsageCount(KV, `ai_usage:user:${userId}:${date}`)
+    if (u >= uLimit) return false
+  }
+  return true
+}
+
+async function markAIUsage(KV: KVNamespace, userId: string) {
+  const date = todayKey()
+  await incrementUsage(KV, `ai_usage:global:${date}`)
+  await incrementUsage(KV, `ai_usage:user:${userId}:${date}`)
+}
+
+async function getUsageSummary(KV: KVNamespace, userId: string) {
+  const date = todayKey()
+  const globalUsed = await getUsageCount(KV, `ai_usage:global:${date}`)
+  const userUsed = await getUsageCount(KV, `ai_usage:user:${userId}:${date}`)
+  return { globalUsed, userUsed, date }
+}
+
+function extractJsonArray(text: string) {
+  const match = text.match(/\[[\s\S]*\]/)
+  if (!match) return null
+  try {
+    const arr = JSON.parse(match[0])
+    return Array.isArray(arr) ? arr : null
+  } catch {
+    return null
+  }
+}
+
+async function classifyWithAI(c: any, url: string, title?: string) {
+  if (!c.env.AI) return []
+  const prompt = `你是书签分类助手，请根据标题和URL给出3-5个中文标签，返回JSON数组，数组元素为简短词语，不要解释。`
+  const input = `标题: ${title || ''}\nURL: ${url}`
+  const result = await c.env.AI.run('@cf/meta/llama-3-8b-instruct', {
+    messages: [
+      { role: 'system', content: prompt },
+      { role: 'user', content: input }
+    ],
+    max_tokens: 120
+  })
+  const raw = result?.response || result?.result || ''
+  const parsed = extractJsonArray(String(raw))
+  if (!parsed) return []
+  const cleaned = parsed
+    .filter((t: any) => typeof t === 'string')
+    .map((t: string) => t.trim())
+    .filter(Boolean)
+    .slice(0, 5)
+  return cleaned
+}
+
+async function maybeRunAI(c: any, userId: string, url: string, title: string | undefined, item?: any) {
+  if (!c.env.AI) return null
+  const current = item || await upsertBookmark(c.env.R2, userId, url, title)
+  if (current?.aiCheckedAt) return { skipped: true, tags: current.aiTags || [] }
+  const allowed = await canUseAI(c.env.KV, userId, c.env.AI_DAILY_CALL_LIMIT_GLOBAL, c.env.AI_DAILY_CALL_LIMIT_PER_USER)
+  if (!allowed) return { skipped: true, reason: 'limit' }
+  const aiTags = await classifyWithAI(c, url, title)
+  await markAIUsage(c.env.KV, userId)
+  const updated = await setAiTags(c.env.R2, userId, url, aiTags)
+  return { tags: updated?.aiTags || aiTags }
+}
+
 app.post('/api/bookmarks/sync', async (c) => {
   try {
     const user = await getAuthUserFromRequest(c)
@@ -167,11 +256,17 @@ app.post('/api/bookmarks/sync', async (c) => {
     if (t === 'created') {
       const url = payload?.bookmark?.url
       const title = payload?.bookmark?.title
-      if (url) await upsertBookmark(c.env.R2, user.id, url, title)
+      if (url) {
+        const item = await upsertBookmark(c.env.R2, user.id, url, title)
+        await maybeRunAI(c, user.id, url, title, item)
+      }
     } else if (t === 'changed') {
       const url = payload?.changeInfo?.url
       const title = payload?.changeInfo?.title
-      if (url) await upsertBookmark(c.env.R2, user.id, url, title)
+      if (url) {
+        const item = await upsertBookmark(c.env.R2, user.id, url, title)
+        await maybeRunAI(c, user.id, url, title, item)
+      }
     } else if (t === 'removed') {
       const url = payload?.url || payload?.bookmark?.url
       if (url) await removeBookmark(c.env.R2, user.id, url)
@@ -181,7 +276,10 @@ app.post('/api/bookmarks/sync', async (c) => {
       for (const it of items) {
         const url = it?.url
         const title = it?.title
-        if (url) await upsertBookmark(c.env.R2, user.id, url, title)
+        if (url) {
+          const item = await upsertBookmark(c.env.R2, user.id, url, title)
+          await maybeRunAI(c, user.id, url, title, item)
+        }
       }
     }
     return c.json({ ok: true })
@@ -232,6 +330,43 @@ app.post('/api/links/check', async (c) => {
   }
   await saveStatus(c.env.R2, user.id, statusMap)
   return c.json({ ok: true, checked: stale.length })
+})
+
+app.post('/api/ai/classify', async (c) => {
+  const user = await getAuthUserFromRequest(c)
+  if (!user) return c.json({ ok: false }, 401)
+  const body = await c.req.json()
+  const url = (body?.url || '').trim()
+  const title = (body?.title || '').trim()
+  if (!url) return c.json({ ok: false, error: 'bad_request' }, 400)
+  const item = await upsertBookmark(c.env.R2, user.id, url, title || undefined)
+  if (item?.aiCheckedAt) return c.json({ ok: true, skipped: true, tags: item.aiTags || [] })
+  if (!c.env.AI) return c.json({ ok: false, error: 'ai_unavailable' }, 503)
+  const allowed = await canUseAI(c.env.KV, user.id, c.env.AI_DAILY_CALL_LIMIT_GLOBAL, c.env.AI_DAILY_CALL_LIMIT_PER_USER)
+  if (!allowed) return c.json({ ok: false, error: 'ai_limit' }, 429)
+  const aiTags = await classifyWithAI(c, url, title || undefined)
+  await markAIUsage(c.env.KV, user.id)
+  const updated = await setAiTags(c.env.R2, user.id, url, aiTags)
+  return c.json({ ok: true, tags: updated?.aiTags || aiTags })
+})
+
+app.get('/api/system/status', async (c) => {
+  const user = await getAuthUserFromRequest(c)
+  if (!user) return c.json({ ok: false }, 401)
+  const stats = await getBookmarkStats(c.env.R2, user.id)
+  const usage = await getUsageSummary(c.env.KV, user.id)
+  return c.json({
+    ok: true,
+    bookmarks: stats,
+    ai: {
+      enabled: Boolean(c.env.AI),
+      limits: {
+        global: c.env.AI_DAILY_CALL_LIMIT_GLOBAL,
+        user: c.env.AI_DAILY_CALL_LIMIT_PER_USER
+      },
+      usage
+    }
+  })
 })
 
 export default app

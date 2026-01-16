@@ -4,6 +4,8 @@ export type BookmarkItem = {
   url: string
   title?: string
   tags?: string[]
+  aiTags?: string[]
+  aiCheckedAt?: number
   createdAt: number
   updatedAt: number
 }
@@ -96,6 +98,7 @@ export async function upsertBookmark(bucket: R2Bucket, userId: string, url: stri
     idx.items[key] = { url: key, title, tags: Array.from(new Set([...(tags || []), ...rt])), createdAt: now, updatedAt: now }
   }
   await saveIndex(bucket, userId, idx)
+  return idx.items[key]
 }
 
 export async function removeBookmark(bucket: R2Bucket, userId: string, url: string) {
@@ -109,7 +112,38 @@ export async function removeBookmark(bucket: R2Bucket, userId: string, url: stri
 
 export async function listBookmarks(bucket: R2Bucket, userId: string) {
   const idx = await loadIndex(bucket, userId)
-  const arr = Object.values(idx.items)
+  const arr = Object.values(idx.items).map((it) => {
+    const mergedTags = Array.from(new Set([...(it.tags || []), ...(it.aiTags || [])]))
+    return { ...it, tags: mergedTags }
+  })
   arr.sort((a, b) => b.updatedAt - a.updatedAt)
   return arr
+}
+
+export async function setAiTags(bucket: R2Bucket, userId: string, url: string, aiTags: string[]) {
+  const idx = await loadIndex(bucket, userId)
+  const key = normalizeUrl(url)
+  const item = idx.items[key]
+  if (!item) return null
+  const mergedTags = Array.from(new Set([...(item.tags || []), ...(aiTags || [])]))
+  idx.items[key] = { ...item, tags: mergedTags, aiTags: aiTags || [], aiCheckedAt: Date.now(), updatedAt: Date.now() }
+  await saveIndex(bucket, userId, idx)
+  return idx.items[key]
+}
+
+export async function getBookmarkStats(bucket: R2Bucket, userId: string) {
+  const idx = await loadIndex(bucket, userId)
+  const items = Object.values(idx.items)
+  const total = items.length
+  const aiTagged = items.filter((it) => it.aiCheckedAt).length
+  const lastAiAt = items.reduce((max, it) => {
+    const t = it.aiCheckedAt || 0
+    return t > max ? t : max
+  }, 0)
+  return {
+    total,
+    aiTagged,
+    lastAiAt: lastAiAt || null,
+    updatedAt: idx.updatedAt
+  }
 }
