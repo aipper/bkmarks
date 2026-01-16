@@ -25,6 +25,29 @@ async function sendSync(payload) {
   } catch (e) {}
 }
 
+function flattenBookmarks(nodes, items) {
+  for (const node of nodes || []) {
+    if (node.url) {
+      items.push({ url: node.url, title: node.title || "" });
+    }
+    if (node.children && node.children.length) {
+      flattenBookmarks(node.children, items);
+    }
+  }
+}
+
+async function fullSync() {
+  const tree = await chrome.bookmarks.getTree();
+  const items = [];
+  flattenBookmarks(tree, items);
+  await sendSync({
+    type: "full",
+    items,
+    timestamp: Date.now()
+  });
+  return { ok: true, count: items.length };
+}
+
 chrome.bookmarks.onCreated.addListener((id, bookmark) => {
   sendSync({
     type: "created",
@@ -64,4 +87,13 @@ chrome.bookmarks.onMoved.addListener((id, moveInfo) => {
     moveInfo,
     timestamp: Date.now()
   });
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === "full_sync") {
+    fullSync()
+      .then((result) => sendResponse(result))
+      .catch(() => sendResponse({ ok: false, error: "全量同步失败" }));
+    return true;
+  }
 });

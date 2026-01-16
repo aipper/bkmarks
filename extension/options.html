@@ -196,6 +196,26 @@
         justify-content: space-between;
         align-items: center;
         gap: 12px;
+        flex-wrap: wrap;
+      }
+
+      .status {
+        margin-top: 12px;
+        min-height: 16px;
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .status.ok { color: #0f7a3a; }
+      .status.error { color: #b42318; }
+      .status.pending { color: #0a84ff; }
+
+      .stats {
+        margin-top: 8px;
+        font-size: 12px;
+        color: var(--muted);
+        text-align: center;
       }
 
       .ghost-button {
@@ -295,10 +315,13 @@
         </div>
 
         <div class="actions">
-          <button class="ghost-button" type="button">测试连接</button>
+          <button id="test" class="ghost-button" type="button">测试连接</button>
+          <button id="fullSync" class="ghost-button" type="button">全量同步</button>
           <button id="save">保存设置</button>
         </div>
 
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+        <div id="stats" class="stats">已同步书签：-</div>
         <p class="footer">所有设置仅保存在本机浏览器。</p>
       </section>
     </main>

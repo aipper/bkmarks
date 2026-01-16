@@ -176,6 +176,13 @@ app.post('/api/bookmarks/sync', async (c) => {
       const url = payload?.url || payload?.bookmark?.url
       if (url) await removeBookmark(c.env.R2, user.id, url)
     } else if (t === 'moved') {
+    } else if (t === 'full') {
+      const items = Array.isArray(payload?.items) ? payload.items : []
+      for (const it of items) {
+        const url = it?.url
+        const title = it?.title
+        if (url) await upsertBookmark(c.env.R2, user.id, url, title)
+      }
     }
     return c.json({ ok: true })
   } catch {
