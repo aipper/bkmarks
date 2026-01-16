@@ -51,6 +51,15 @@ npm run dev
 3. 在扩展选项页填入服务端地址与账号密码
 4. 新增/删除书签后，扩展会调用 `/api/bookmarks/sync`
 
+## 扩展打包
+用于发布到 Chrome Web Store 或分享 zip 包。
+
+```bash
+./scripts/package-extension.sh
+```
+
+产物会生成在 `dist/`，文件名包含 `manifest.json` 中的版本号。
+
 ## 部署到 Cloudflare Workers
 ```bash
 # 仓库根目录部署

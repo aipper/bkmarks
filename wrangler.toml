@@ -1,4 +1,4 @@
-name = "bkmarks-server"
+name = "bkmarks"
 compatibility_date = "2026-01-15"
 
 # 入口文件位于 server 子目录
@@ -7,8 +7,8 @@ main = "server/src/index.ts"
 # KV 命名空间绑定 (请在 Cloudflare Dashboard 创建后填入 id)
 [[kv_namespaces]]
 binding = "KV"
-id = "todo_replace_with_real_kv_id"
-preview_id = "todo_replace_with_preview_kv_id"
+id = "5dfedb3aa0744af78e309670405c4015"
+preview_id = "5dfedb3aa0744af78e309670405c4015"
 
 # R2 存储桶绑定 (请在 Cloudflare Dashboard 创建后填入 bucket_name)
 [[r2_buckets]]
@@ -22,6 +22,6 @@ binding = "AI"
 
 # 环境变量 (每日限额配置)
 [vars]
-AI_DAILY_CALL_LIMIT_GLOBAL = 5000
-AI_DAILY_CALL_LIMIT_PER_USER = 500
+AI_DAILY_CALL_LIMIT_GLOBAL = 1000
+AI_DAILY_CALL_LIMIT_PER_USER = 100
 ADMIN_RESET_TOKEN = "dev-reset-token-123"
