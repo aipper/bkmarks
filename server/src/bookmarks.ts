@@ -114,7 +114,7 @@ export async function listBookmarks(bucket: R2Bucket, userId: string) {
   const idx = await loadIndex(bucket, userId)
   const arr = Object.values(idx.items).map((it) => {
     const mergedTags = Array.from(new Set([...(it.tags || []), ...(it.aiTags || [])]))
-    return { ...it, tags: mergedTags }
+    return { ...it, tags: mergedTags, manualTags: it.tags || [] }
   })
   arr.sort((a, b) => b.updatedAt - a.updatedAt)
   return arr
@@ -127,6 +127,25 @@ export async function setAiTags(bucket: R2Bucket, userId: string, url: string, a
   if (!item) return null
   const mergedTags = Array.from(new Set([...(item.tags || []), ...(aiTags || [])]))
   idx.items[key] = { ...item, tags: mergedTags, aiTags: aiTags || [], aiCheckedAt: Date.now(), updatedAt: Date.now() }
+  await saveIndex(bucket, userId, idx)
+  return idx.items[key]
+}
+
+export async function getAiTagCandidates(bucket: R2Bucket, userId: string) {
+  const idx = await loadIndex(bucket, userId)
+  const set = new Set<string>()
+  Object.values(idx.items).forEach((it) => {
+    ;(it.aiTags || []).forEach((t) => set.add(t))
+  })
+  return Array.from(set)
+}
+
+export async function setManualTags(bucket: R2Bucket, userId: string, url: string, tags: string[]) {
+  const idx = await loadIndex(bucket, userId)
+  const key = normalizeUrl(url)
+  const item = idx.items[key]
+  if (!item) return null
+  idx.items[key] = { ...item, tags, updatedAt: Date.now() }
   await saveIndex(bucket, userId, idx)
   return idx.items[key]
 }

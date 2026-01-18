@@ -1,7 +1,7 @@
 import { Hono } from 'hono'
 import type { KVNamespace, R2Bucket } from '@cloudflare/workers-types'
 import { hashPassword, verifyPassword, randomId, getUser, putUser, getSession, putSession, delSession, parseCookies, makeCookie } from './auth'
-import { upsertBookmark, removeBookmark, listBookmarks, setAiTags, getBookmarkStats } from './bookmarks'
+import { upsertBookmark, removeBookmark, listBookmarks, setAiTags, getBookmarkStats, getAiTagCandidates, setManualTags } from './bookmarks'
 import { loadStatus, saveStatus, checkUrl } from './status'
 import { html, css, js } from './ui'
 
@@ -46,6 +46,10 @@ app.get('/api/config', (c) => {
 })
 
 app.get('/app', (c) => {
+  return c.newResponse(html(), 200, { 'content-type': 'text/html; charset=utf-8' })
+})
+
+app.get('/app/:page', (c) => {
   return c.newResponse(html(), 200, { 'content-type': 'text/html; charset=utf-8' })
 })
 
@@ -195,11 +199,57 @@ async function markAIUsage(KV: KVNamespace, userId: string) {
   await incrementUsage(KV, `ai_usage:user:${userId}:${date}`)
 }
 
+async function appendAiLog(KV: KVNamespace, userId: string, entry: any) {
+  const key = `ai_log:user:${userId}`
+  const raw = await KV.get(key)
+  let items: any[] = []
+  if (raw) {
+    try { items = JSON.parse(raw) } catch { items = [] }
+  }
+  items.unshift(entry)
+  items = items.slice(0, 20)
+  await KV.put(key, JSON.stringify(items))
+  return items
+}
+
+async function getAiLogs(KV: KVNamespace, userId: string) {
+  const key = `ai_log:user:${userId}`
+  const raw = await KV.get(key)
+  if (!raw) return []
+  try {
+    const arr = JSON.parse(raw)
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
+}
+
 async function getUsageSummary(KV: KVNamespace, userId: string) {
   const date = todayKey()
   const globalUsed = await getUsageCount(KV, `ai_usage:global:${date}`)
   const userUsed = await getUsageCount(KV, `ai_usage:user:${userId}:${date}`)
   return { globalUsed, userUsed, date }
+}
+
+async function getUserTags(KV: KVNamespace, userId: string) {
+  const key = `tags:user:${userId}`
+  const raw = await KV.get(key)
+  if (raw) {
+    try {
+      const tags = JSON.parse(raw)
+      if (Array.isArray(tags)) return tags
+    } catch {
+      // ignore
+    }
+  }
+  const defaults = DEFAULT_TAGS.map((name, i) => ({ name, enabled: false, order: i }))
+  await KV.put(key, JSON.stringify(defaults))
+  return defaults
+}
+
+async function saveUserTags(KV: KVNamespace, userId: string, tags: any[]) {
+  const key = `tags:user:${userId}`
+  await KV.put(key, JSON.stringify(tags))
 }
 
 function extractJsonArray(text: string) {
@@ -213,9 +263,67 @@ function extractJsonArray(text: string) {
   }
 }
 
+const AI_TAG_WHITELIST = [
+  '工具',
+  '文档',
+  '教程',
+  '视频',
+  '开发',
+  '资源',
+  '社区',
+  '效率',
+  '设计',
+  '新闻',
+  '娱乐',
+  '金融',
+  '购物',
+  '教育',
+  'AI',
+  'AI中转'
+]
+
+const DEFAULT_TAGS = AI_TAG_WHITELIST
+
+const AI_TAG_SYNONYMS: Record<string, string> = {
+  '指南': '教程',
+  '手册': '教程',
+  '课程': '教程',
+  '学习': '教育',
+  '问答': '社区',
+  '论坛': '社区',
+  '生产力': '效率',
+  '效率工具': '效率',
+  'ai工具': 'AI',
+  '人工智能': 'AI',
+  'ai中转站': 'AI中转',
+  '中转': 'AI中转',
+  '代理': 'AI中转',
+  '转发': 'AI中转',
+  '网关': 'AI中转'
+}
+
+function normalizeAiTag(tag: string) {
+  const t = tag.trim()
+  if (!t) return null
+  const lower = t.toLowerCase()
+  const mapped = AI_TAG_SYNONYMS[lower] || AI_TAG_SYNONYMS[t] || t
+  return AI_TAG_WHITELIST.includes(mapped) ? mapped : null
+}
+
+function detectAiRelay(url: string, title?: string) {
+  const s = `${url} ${title || ''}`.toLowerCase()
+  if (s.includes('newapi')) return true
+  if (s.includes('中转') || s.includes('转发') || s.includes('relay') || s.includes('proxy') || s.includes('gateway')) {
+    if (s.includes('ai') || s.includes('openai') || s.includes('gpt') || s.includes('llm') || s.includes('api')) {
+      return true
+    }
+  }
+  return false
+}
+
 async function classifyWithAI(c: any, url: string, title?: string) {
   if (!c.env.AI) return []
-  const prompt = `你是书签分类助手，请根据标题和URL给出3-5个中文标签，返回JSON数组，数组元素为简短词语，不要解释。`
+  const prompt = `你是书签分类助手，请从固定白名单中选择2-3个中文标签，必须是主题/用途类标签，不要包含域名、路径、版本号。只返回JSON数组。白名单：${AI_TAG_WHITELIST.join('、')}。`
   const input = `标题: ${title || ''}\nURL: ${url}`
   const result = await c.env.AI.run('@cf/meta/llama-3-8b-instruct', {
     messages: [
@@ -226,13 +334,12 @@ async function classifyWithAI(c: any, url: string, title?: string) {
   })
   const raw = result?.response || result?.result || ''
   const parsed = extractJsonArray(String(raw))
-  if (!parsed) return []
-  const cleaned = parsed
+  const cleaned = (parsed || [])
     .filter((t: any) => typeof t === 'string')
-    .map((t: string) => t.trim())
-    .filter(Boolean)
-    .slice(0, 5)
-  return cleaned
+    .map((t: string) => normalizeAiTag(t))
+    .filter(Boolean) as string[]
+  if (detectAiRelay(url, title)) cleaned.push('AI中转')
+  return Array.from(new Set(cleaned)).slice(0, 3)
 }
 
 async function maybeRunAI(c: any, userId: string, url: string, title: string | undefined, item?: any) {
@@ -244,6 +351,7 @@ async function maybeRunAI(c: any, userId: string, url: string, title: string | u
   const aiTags = await classifyWithAI(c, url, title)
   await markAIUsage(c.env.KV, userId)
   const updated = await setAiTags(c.env.R2, userId, url, aiTags)
+  await appendAiLog(c.env.KV, userId, { url, title: title || updated?.title || '', tags: updated?.aiTags || aiTags, at: Date.now() })
   return { tags: updated?.aiTags || aiTags }
 }
 
@@ -347,7 +455,55 @@ app.post('/api/ai/classify', async (c) => {
   const aiTags = await classifyWithAI(c, url, title || undefined)
   await markAIUsage(c.env.KV, user.id)
   const updated = await setAiTags(c.env.R2, user.id, url, aiTags)
+  await appendAiLog(c.env.KV, user.id, { url, title: title || updated?.title || '', tags: updated?.aiTags || aiTags, at: Date.now() })
   return c.json({ ok: true, tags: updated?.aiTags || aiTags })
+})
+
+app.post('/api/bookmarks/tags', async (c) => {
+  const user = await getAuthUserFromRequest(c)
+  if (!user) return c.json({ ok: false }, 401)
+  const body = await c.req.json()
+  const url = (body?.url || '').trim()
+  const tags = Array.isArray(body?.tags) ? body.tags.map((t: any) => String(t).trim()).filter(Boolean) : []
+  if (!url) return c.json({ ok: false }, 400)
+  const updated = await setManualTags(c.env.R2, user.id, url, tags)
+  if (!updated) return c.json({ ok: false }, 404)
+  return c.json({ ok: true })
+})
+
+app.get('/api/tags', async (c) => {
+  const user = await getAuthUserFromRequest(c)
+  if (!user) return c.json({ ok: false }, 401)
+  const tags = await getUserTags(c.env.KV, user.id)
+  return c.json({ ok: true, tags })
+})
+
+app.post('/api/tags', async (c) => {
+  const user = await getAuthUserFromRequest(c)
+  if (!user) return c.json({ ok: false }, 401)
+  const body = await c.req.json()
+  const incoming = Array.isArray(body?.tags) ? body.tags : []
+  const seen = new Set<string>()
+  const cleaned = incoming
+    .map((t: any, idx: number) => {
+      const name = String(t?.name || '').trim()
+      const enabled = Boolean(t?.enabled)
+      if (!name || seen.has(name)) return null
+      seen.add(name)
+      return { name, enabled, order: idx }
+    })
+    .filter(Boolean)
+  await saveUserTags(c.env.KV, user.id, cleaned)
+  return c.json({ ok: true })
+})
+
+app.get('/api/tags/candidates', async (c) => {
+  const user = await getAuthUserFromRequest(c)
+  if (!user) return c.json({ ok: false }, 401)
+  const tags = await getUserTags(c.env.KV, user.id)
+  const enabled = new Set(tags.filter((t: any) => t.enabled).map((t: any) => t.name))
+  const candidates = (await getAiTagCandidates(c.env.R2, user.id)).filter((t) => !enabled.has(t))
+  return c.json({ ok: true, tags: candidates })
 })
 
 app.get('/api/system/status', async (c) => {
@@ -355,6 +511,7 @@ app.get('/api/system/status', async (c) => {
   if (!user) return c.json({ ok: false }, 401)
   const stats = await getBookmarkStats(c.env.R2, user.id)
   const usage = await getUsageSummary(c.env.KV, user.id)
+  const logs = await getAiLogs(c.env.KV, user.id)
   return c.json({
     ok: true,
     bookmarks: stats,
@@ -364,7 +521,8 @@ app.get('/api/system/status', async (c) => {
         global: c.env.AI_DAILY_CALL_LIMIT_GLOBAL,
         user: c.env.AI_DAILY_CALL_LIMIT_PER_USER
       },
-      usage
+      usage,
+      logs
     }
   })
 })
