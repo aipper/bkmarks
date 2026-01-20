@@ -46,19 +46,31 @@ app.get('/api/config', (c) => {
 })
 
 app.get('/app', (c) => {
-  return c.newResponse(html(), 200, { 'content-type': 'text/html; charset=utf-8' })
+  return c.newResponse(html(), 200, {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store'
+  })
 })
 
 app.get('/app/:page', (c) => {
-  return c.newResponse(html(), 200, { 'content-type': 'text/html; charset=utf-8' })
+  return c.newResponse(html(), 200, {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store'
+  })
 })
 
 app.get('/static/app.css', (c) => {
-  return c.newResponse(css(), 200, { 'content-type': 'text/css; charset=utf-8' })
+  return c.newResponse(css(), 200, {
+    'content-type': 'text/css; charset=utf-8',
+    'cache-control': 'no-store'
+  })
 })
 
 app.get('/static/app.js', (c) => {
-  return c.newResponse(js(), 200, { 'content-type': 'application/javascript; charset=utf-8' })
+  return c.newResponse(js(), 200, {
+    'content-type': 'application/javascript; charset=utf-8',
+    'cache-control': 'no-store'
+  })
 })
 
 app.post('/api/system/reset-registration', async (c) => {
