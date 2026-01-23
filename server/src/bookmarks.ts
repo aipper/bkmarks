@@ -12,6 +12,7 @@ export type BookmarkItem = {
 
 export type BookmarkIndex = {
   items: Record<string, BookmarkItem>
+  deleted?: Record<string, number>
   updatedAt: number
 }
 
@@ -75,8 +76,10 @@ async function writeJson(bucket: R2Bucket, key: string, data: any) {
 export async function loadIndex(bucket: R2Bucket, userId: string) {
   const key = `user/${userId}/bookmarks_index.json`
   const data = await readJson(bucket, key)
-  if (!data) return { items: {}, updatedAt: Date.now() } as BookmarkIndex
-  return data as BookmarkIndex
+  if (!data) return { items: {}, deleted: {}, updatedAt: Date.now() } as BookmarkIndex
+  const idx = data as BookmarkIndex
+  if (!idx.deleted) idx.deleted = {}
+  return idx
 }
 
 export async function saveIndex(bucket: R2Bucket, userId: string, idx: BookmarkIndex) {
@@ -89,6 +92,7 @@ export async function upsertBookmark(bucket: R2Bucket, userId: string, url: stri
   const idx = await loadIndex(bucket, userId)
   const key = normalizeUrl(url)
   const now = Date.now()
+  if (idx.deleted && idx.deleted[key]) delete idx.deleted[key]
   const existing = idx.items[key]
   if (existing) {
     const mergedTags = Array.from(new Set([...(existing.tags || []), ...(tags || []), ...ruleTagsFor(key, title || existing.title)]))
@@ -101,13 +105,23 @@ export async function upsertBookmark(bucket: R2Bucket, userId: string, url: stri
   return idx.items[key]
 }
 
+function pruneDeletedMap(deleted: Record<string, number>, maxEntries = 5000) {
+  const entries = Object.entries(deleted)
+  if (entries.length <= maxEntries) return deleted
+  entries.sort((a, b) => (b[1] || 0) - (a[1] || 0))
+  const out: Record<string, number> = {}
+  for (const [url, at] of entries.slice(0, maxEntries)) out[url] = at
+  return out
+}
+
 export async function removeBookmark(bucket: R2Bucket, userId: string, url: string) {
   const idx = await loadIndex(bucket, userId)
   const key = normalizeUrl(url)
-  if (idx.items[key]) {
-    delete idx.items[key]
-    await saveIndex(bucket, userId, idx)
-  }
+  if (idx.items[key]) delete idx.items[key]
+  idx.deleted = idx.deleted || {}
+  idx.deleted[key] = Date.now()
+  idx.deleted = pruneDeletedMap(idx.deleted)
+  await saveIndex(bucket, userId, idx)
 }
 
 export async function listBookmarks(bucket: R2Bucket, userId: string) {
@@ -117,6 +131,19 @@ export async function listBookmarks(bucket: R2Bucket, userId: string) {
     return { ...it, tags: mergedTags, manualTags: it.tags || [] }
   })
   arr.sort((a, b) => b.updatedAt - a.updatedAt)
+  return arr
+}
+
+export async function getDeletedMap(bucket: R2Bucket, userId: string) {
+  const idx = await loadIndex(bucket, userId)
+  return idx.deleted || {}
+}
+
+export async function listDeletedBookmarks(bucket: R2Bucket, userId: string) {
+  const idx = await loadIndex(bucket, userId)
+  const deleted = idx.deleted || {}
+  const arr = Object.entries(deleted).map(([url, deletedAt]) => ({ url, deletedAt }))
+  arr.sort((a, b) => (b.deletedAt || 0) - (a.deletedAt || 0))
   return arr
 }
 

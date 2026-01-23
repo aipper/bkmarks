@@ -7,21 +7,21 @@ export function html() {
       <title>Bkmarks</title>
       <link rel="stylesheet" href="/static/app.css">
     </head>
-    <body>
-      <div id="app">
-        <header class="topbar">
-          <div class="brand">
-            <span class="brand-mark" aria-hidden="true"></span>
-            <div class="brand-text">
-              <div class="brand-title">Bkmarks</div>
-              <div class="brand-subtitle">管理与导航</div>
-            </div>
-          </div>
-          <div class="search-wrap">
-            <input id="search" class="search" placeholder="搜索书签">
-          </div>
-          <div id="user" class="user"></div>
-        </header>
+	    <body>
+	      <div id="app">
+	        <header class="topbar">
+	          <a class="brand" href="/app" aria-label="书签主页">
+	            <span class="brand-mark" aria-hidden="true"></span>
+	            <div class="brand-text">
+	              <div class="brand-title">Bkmarks</div>
+	              <div class="brand-subtitle">管理与导航</div>
+	            </div>
+	          </a>
+	          <div class="search-wrap">
+	            <input id="search" class="search" placeholder="搜索书签">
+	          </div>
+	          <div id="user" class="user"></div>
+	        </header>
         <main class="shell">
           <aside class="sidebar">
             <div id="sidebarTitle" class="section-title">标签</div>
@@ -29,21 +29,25 @@ export function html() {
           </aside>
           <section class="content">
             <div id="content" class="content-body">
-              <div id="bookmarksView">
-                <div id="register" class="panel hidden">
-                  <h2>注册</h2>
-                  <input id="ru" placeholder="用户名">
-                  <input id="rp" type="password" placeholder="密码">
-                  <button id="registerBtn">注册</button>
-                </div>
-                <div id="login" class="panel hidden">
-                  <h2>登录</h2>
-                  <input id="u" placeholder="用户名">
-                  <input id="p" type="password" placeholder="密码">
-                  <button id="loginBtn">登录</button>
-                </div>
-                <div id="list" class="grid"></div>
-              </div>
+	              <div id="bookmarksView">
+	                <div id="register" class="panel hidden">
+	                  <h2>注册</h2>
+	                  <input id="ru" placeholder="用户名">
+	                  <input id="rp" type="password" placeholder="密码">
+	                  <button id="registerBtn">注册</button>
+	                </div>
+	                <div id="login" class="panel hidden">
+	                  <h2>登录</h2>
+	                  <input id="u" placeholder="用户名">
+	                  <input id="p" type="password" placeholder="密码">
+	                  <button id="loginBtn">登录</button>
+	                </div>
+	                <div class="bookmark-toolbar">
+	                  <button id="batchAiBtn" class="ai-btn" type="button">批量AI识别</button>
+	                  <div id="batchAiInfo" class="toolbar-info"></div>
+	                </div>
+	                <div id="list" class="grid"></div>
+	              </div>
 
               <div id="profileView" class="page-view hidden">
                 <div class="page-header">
@@ -163,6 +167,21 @@ export function html() {
           </div>
         </div>
       </div>
+      <div id="confirmModal" class="modal hidden" role="dialog" aria-modal="true" aria-label="确认操作">
+        <div id="confirmBackdrop" class="modal-backdrop"></div>
+        <div class="modal-card confirm-card" role="document">
+          <div class="modal-header">
+            <div id="confirmTitle" class="modal-title">确认操作</div>
+            <button id="confirmClose" class="icon-button" type="button" aria-label="关闭">×</button>
+          </div>
+          <div id="confirmSubtitle" class="modal-subtitle"></div>
+          <div id="confirmBody" class="confirm-body"></div>
+          <div class="modal-actions">
+            <button id="confirmCancel" class="ghost-button" type="button">取消</button>
+            <button id="confirmOk" class="primary-button" type="button">确定</button>
+          </div>
+        </div>
+      </div>
       <script src="/static/app.js"></script>
     </body>
   </html>`
@@ -218,7 +237,11 @@ header.topbar{
   align-items:center;
   gap:12px;
   min-width:200px;
+  text-decoration:none;
+  color:inherit;
 }
+.brand:focus-visible{outline:2px solid rgba(37,99,235,0.35);outline-offset:4px;border-radius:999px}
+.brand:hover .brand-mark{box-shadow:0 12px 26px rgba(15,23,42,0.14)}
 .brand-mark{
   width:36px;
   height:36px;
@@ -352,6 +375,19 @@ header.topbar{
   box-shadow:0 12px 24px rgba(10,132,255,0.2);
 }
 .content-body{min-height:60vh}
+.bookmark-toolbar{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  margin:0 0 14px;
+}
+.toolbar-info{
+  font-size:12px;
+  color:var(--muted);
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px}
 .page-view{min-height:60vh}
 .page-header{
@@ -467,6 +503,17 @@ body.modal-open{overflow:hidden}
   padding:18px;
   backdrop-filter:blur(16px);
 }
+.confirm-card{width:min(520px,100%)}
+.confirm-body{
+  border:1px solid rgba(15,23,42,0.08);
+  background:rgba(248,250,252,0.92);
+  border-radius:14px;
+  padding:12px;
+  font-size:13px;
+  color:var(--text);
+  line-height:1.55;
+}
+.confirm-body .confirm-hint{color:var(--muted);font-size:12px;margin-top:8px}
 .modal-header{
   display:flex;
   align-items:center;
@@ -566,6 +613,10 @@ body.modal-open{overflow:hidden}
   font-weight:600;
   cursor:pointer;
   box-shadow:0 12px 24px rgba(10,132,255,0.25);
+}
+.primary-button.danger{
+  background:linear-gradient(135deg,#ff3b30,#ff453a);
+  box-shadow:0 12px 24px rgba(255,59,48,0.22);
 }
 .primary-button:disabled{opacity:0.7;cursor:default}
 @media (max-width:720px){
@@ -691,6 +742,11 @@ body.modal-open{overflow:hidden}
   cursor:pointer;
   transition:background 180ms ease,border-color 180ms ease,filter 180ms ease;
 }
+.ai-btn.danger{
+  border-color:rgba(255,59,48,0.35);
+  background:rgba(255,59,48,0.08);
+  color:#b91c1c;
+}
 .ai-btn:hover{border-color:rgba(37,99,235,0.4);filter:brightness(1.02)}
 .ai-btn:disabled{cursor:default;opacity:0.6}
 .ai-btn.loading{opacity:0.7}
@@ -746,6 +802,7 @@ body.login main.shell{
 }
 body.login .sidebar,
 body.login #list{display:none}
+body.login .bookmark-toolbar{display:none}
 body[data-page="profile"] .search-wrap,
 body[data-page="settings"] .search-wrap,
 body[data-page="status"] .search-wrap{display:none}

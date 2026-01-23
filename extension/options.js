@@ -101,8 +101,12 @@ async function requestFullSync() {
   try {
     const resp = await chrome.runtime.sendMessage({ type: "full_sync" });
     if (resp?.ok) {
-      const countText = Number.isFinite(resp.count) ? `（${resp.count}条）` : "";
-      setStatus(`已提交全量同步${countText}`, "ok");
+      const parts = [];
+      if (Number.isFinite(resp.total)) parts.push(`本地${resp.total}条`);
+      if (Number.isFinite(resp.count)) parts.push(`提交${resp.count}条`);
+      if (Number.isFinite(resp.skippedDeleted) && resp.skippedDeleted > 0) parts.push(`跳过${resp.skippedDeleted}条（服务器已删除）`);
+      const suffix = parts.length ? `（${parts.join("，")}）` : "";
+      setStatus(`已提交全量同步${suffix}`, "ok");
       fetchBookmarkCount(
         document.getElementById("serverUrl").value.trim(),
         document.getElementById("username").value.trim(),
@@ -116,11 +120,34 @@ async function requestFullSync() {
   }
 }
 
+async function requestWriteBack() {
+  const serverUrl = document.getElementById("serverUrl").value.trim();
+  if (!serverUrl) {
+    setStatus("请先填写服务端地址", "error");
+    return;
+  }
+  const ok = confirm("将从服务器回写到本地“其他书签 / Bkmarks（来自服务器）”，并覆盖该文件夹内容。确定继续？");
+  if (!ok) return;
+  setStatus("正在回写本地...", "pending");
+  try {
+    const resp = await chrome.runtime.sendMessage({ type: "write_back" });
+    if (resp?.ok) {
+      const countText = Number.isFinite(resp.count) ? `（${resp.count}条）` : "";
+      setStatus(`回写完成${countText}`, "ok");
+    } else {
+      setStatus(resp?.error || "回写失败", "error");
+    }
+  } catch {
+    setStatus("无法触发回写", "error");
+  }
+}
+
 document.addEventListener("DOMContentLoaded", () => {
   load();
   document.getElementById("save").addEventListener("click", save);
   document.getElementById("test").addEventListener("click", testConnection);
   document.getElementById("fullSync").addEventListener("click", requestFullSync);
+  document.getElementById("writeBack").addEventListener("click", requestWriteBack);
   chrome.storage.local.get(["serverUrl", "username", "password"]).then((cfg) => {
     fetchBookmarkCount(cfg.serverUrl || "", cfg.username || "", cfg.password || "");
   });

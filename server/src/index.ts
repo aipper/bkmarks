@@ -1,9 +1,10 @@
 import { Hono } from 'hono'
 import type { KVNamespace, R2Bucket } from '@cloudflare/workers-types'
 import { hashPassword, verifyPassword, randomId, getUser, putUser, getSession, putSession, delSession, parseCookies, makeCookie } from './auth'
-import { upsertBookmark, removeBookmark, listBookmarks, setAiTags, getBookmarkStats, getAiTagCandidates, setManualTags } from './bookmarks'
+import { upsertBookmark, removeBookmark, listBookmarks, setAiTags, getBookmarkStats, getAiTagCandidates, setManualTags, getDeletedMap, listDeletedBookmarks, normalizeUrl } from './bookmarks'
 import { loadStatus, saveStatus, checkUrl } from './status'
-import { html, css, js } from './ui'
+import { html, css } from './ui'
+import { js } from './ui_js'
 
 type Bindings = {
   KV: KVNamespace
@@ -393,11 +394,14 @@ app.post('/api/bookmarks/sync', async (c) => {
     } else if (t === 'moved') {
     } else if (t === 'full') {
       const items = Array.isArray(payload?.items) ? payload.items : []
+      const deleted = await getDeletedMap(c.env.R2, user.id)
       for (const it of items) {
         const url = it?.url
         const title = it?.title
         if (url) {
-          const item = await upsertBookmark(c.env.R2, user.id, url, title)
+          const key = normalizeUrl(url)
+          if (deleted[key]) continue
+          const item = await upsertBookmark(c.env.R2, user.id, key, title)
           await maybeRunAI(c, user.id, url, title, item)
         }
       }
@@ -415,6 +419,26 @@ app.get('/api/bookmarks/list', async (c) => {
   const statusMap = await loadStatus(c.env.R2, user.id)
   const itemsWithStatus = items.map(it => ({ ...it, status: statusMap[it.url]?.status || 'unknown', code: statusMap[it.url]?.code }))
   return c.json({ ok: true, items: itemsWithStatus })
+})
+
+app.get('/api/bookmarks/deleted', async (c) => {
+  const user = await getAuthUserFromRequest(c)
+  if (!user) return c.json({ ok: false }, 401)
+  const items = await listDeletedBookmarks(c.env.R2, user.id)
+  return c.json({ ok: true, items })
+})
+
+app.post('/api/bookmarks/delete', async (c) => {
+  const user = await getAuthUserFromRequest(c)
+  if (!user) return c.json({ ok: false }, 401)
+  let body: any = {}
+  try {
+    body = await c.req.json()
+  } catch {}
+  const url = (body?.url || '').trim()
+  if (!url) return c.json({ ok: false, error: 'bad_request' }, 400)
+  await removeBookmark(c.env.R2, user.id, url)
+  return c.json({ ok: true })
 })
 
 app.post('/api/admin/create-user', async (c) => {
