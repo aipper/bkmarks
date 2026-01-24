@@ -5,6 +5,7 @@ import { upsertBookmark, removeBookmark, listBookmarks, setAiTags, getBookmarkSt
 import { loadStatus, saveStatus, checkUrl } from './status'
 import { html, css } from './ui'
 import { js } from './ui_js'
+import { getAiPublicConfig, isAiAvailable, runAiChat } from './ai'
 
 type Bindings = {
   KV: KVNamespace
@@ -13,6 +14,12 @@ type Bindings = {
   AI_DAILY_CALL_LIMIT_GLOBAL: number
   AI_DAILY_CALL_LIMIT_PER_USER: number
   ADMIN_RESET_TOKEN: string
+  AI_PROVIDER?: string
+  OPENAI_API_KEY?: string
+  OPENAI_MODEL?: string
+  OPENAI_BASE_URL?: string
+  GEMINI_API_KEY?: string
+  GEMINI_MODEL?: string
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -37,8 +44,11 @@ app.get('/', (c) => {
 })
 
 app.get('/api/config', (c) => {
+  const ai = getAiPublicConfig(c.env)
   return c.json({
-    ai_enabled: Boolean(c.env.AI),
+    ai_enabled: isAiAvailable(c.env),
+    ai_provider: ai.provider,
+    ai_model: (ai as any).model,
     limits: {
       global: c.env.AI_DAILY_CALL_LIMIT_GLOBAL,
       user: c.env.AI_DAILY_CALL_LIMIT_PER_USER
@@ -335,17 +345,22 @@ function detectAiRelay(url: string, title?: string) {
 }
 
 async function classifyWithAI(c: any, url: string, title?: string) {
-  if (!c.env.AI) return []
+  if (!isAiAvailable(c.env)) return []
   const prompt = `你是书签分类助手，请从固定白名单中选择2-3个中文标签，必须是主题/用途类标签，不要包含域名、路径、版本号。只返回JSON数组。白名单：${AI_TAG_WHITELIST.join('、')}。`
   const input = `标题: ${title || ''}\nURL: ${url}`
-  const result = await c.env.AI.run('@cf/meta/llama-3-8b-instruct', {
-    messages: [
-      { role: 'system', content: prompt },
-      { role: 'user', content: input }
-    ],
-    max_tokens: 120
-  })
-  const raw = result?.response || result?.result || ''
+  let raw = ''
+  try {
+    raw = await runAiChat(
+      c.env,
+      [
+        { role: 'system', content: prompt },
+        { role: 'user', content: input }
+      ],
+      120
+    )
+  } catch {
+    raw = ''
+  }
   const parsed = extractJsonArray(String(raw))
   const cleaned = (parsed || [])
     .filter((t: any) => typeof t === 'string')
@@ -356,7 +371,7 @@ async function classifyWithAI(c: any, url: string, title?: string) {
 }
 
 async function maybeRunAI(c: any, userId: string, url: string, title: string | undefined, item?: any) {
-  if (!c.env.AI) return null
+  if (!isAiAvailable(c.env)) return null
   const current = item || await upsertBookmark(c.env.R2, userId, url, title)
   if (current?.aiCheckedAt) return { skipped: true, tags: current.aiTags || [] }
   const allowed = await canUseAI(c.env.KV, userId, c.env.AI_DAILY_CALL_LIMIT_GLOBAL, c.env.AI_DAILY_CALL_LIMIT_PER_USER)
@@ -485,7 +500,7 @@ app.post('/api/ai/classify', async (c) => {
   if (!url) return c.json({ ok: false, error: 'bad_request' }, 400)
   const item = await upsertBookmark(c.env.R2, user.id, url, title || undefined)
   if (item?.aiCheckedAt) return c.json({ ok: true, skipped: true, tags: item.aiTags || [] })
-  if (!c.env.AI) return c.json({ ok: false, error: 'ai_unavailable' }, 503)
+  if (!isAiAvailable(c.env)) return c.json({ ok: false, error: 'ai_unavailable' }, 503)
   const allowed = await canUseAI(c.env.KV, user.id, c.env.AI_DAILY_CALL_LIMIT_GLOBAL, c.env.AI_DAILY_CALL_LIMIT_PER_USER)
   if (!allowed) return c.json({ ok: false, error: 'ai_limit' }, 429)
   const aiTags = await classifyWithAI(c, url, title || undefined)
@@ -548,11 +563,14 @@ app.get('/api/system/status', async (c) => {
   const stats = await getBookmarkStats(c.env.R2, user.id)
   const usage = await getUsageSummary(c.env.KV, user.id)
   const logs = await getAiLogs(c.env.KV, user.id)
+  const ai = getAiPublicConfig(c.env)
   return c.json({
     ok: true,
     bookmarks: stats,
     ai: {
-      enabled: Boolean(c.env.AI),
+      enabled: isAiAvailable(c.env),
+      provider: ai.provider,
+      model: (ai as any).model,
       limits: {
         global: c.env.AI_DAILY_CALL_LIMIT_GLOBAL,
         user: c.env.AI_DAILY_CALL_LIMIT_PER_USER
