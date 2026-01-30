@@ -125,6 +125,28 @@ export function html() {
                         </div>
                         <div id="aiConfigStatus" class="config-status"></div>
                         <div id="aiProbeResults" class="probe-results"></div>
+
+                        <div class="divider"></div>
+
+                        <div class="card-title" style="margin-top:2px">AI 限额</div>
+                        <div class="limits-grid">
+                          <div class="form-group">
+                            <label class="form-label">每日全局上限</label>
+                            <input id="aiDailyGlobal" type="number" min="0" max="1000" step="1" class="form-input" placeholder="1000">
+                          </div>
+                          <div class="form-group">
+                            <label class="form-label">每日单用户上限</label>
+                            <input id="aiDailyPerUser" type="number" min="0" max="100" step="1" class="form-input" placeholder="100">
+                          </div>
+                          <div class="form-group">
+                            <label class="form-label">全局 RPM</label>
+                            <input id="aiRpmGlobal" type="number" min="0" max="10" step="1" class="form-input" placeholder="10">
+                          </div>
+                        </div>
+                        <div class="form-actions">
+                          <button id="aiLimitsSaveBtn" class="save-button" type="button">保存限额</button>
+                        </div>
+                        <div id="aiLimitsStatus" class="config-status"></div>
                       </div>
                     </div>
                   </div>
@@ -972,6 +994,21 @@ body.modal-open{overflow:hidden}
   background:rgba(37,99,235,0.1);
   border-color:rgba(37,99,235,0.25);
   color:#2563eb;
+}
+
+.divider{
+  height:1px;
+  background:rgba(148,163,184,0.22);
+  margin:14px 0;
+}
+
+.limits-grid{
+  display:grid;
+  grid-template-columns:repeat(3, minmax(0, 1fr));
+  gap:12px;
+}
+@media (max-width: 780px){
+  .limits-grid{grid-template-columns:1fr;}
 }
 
 .probe-results{

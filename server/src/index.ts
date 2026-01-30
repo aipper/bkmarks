@@ -24,6 +24,7 @@ type Bindings = {
   R2: R2Bucket
   AI_DAILY_CALL_LIMIT_GLOBAL: number
   AI_DAILY_CALL_LIMIT_PER_USER: number
+  AI_RPM_LIMIT_GLOBAL: number
   ADMIN_RESET_TOKEN: string
   AI_PROVIDER?: string
   OPENAI_API_KEY?: string
@@ -57,14 +58,16 @@ app.get('/', (c) => {
 app.get('/api/config', async (c) => {
   const ai = await getAiPublicConfig(c.env)
   const enabled = await isAiAvailable(c.env)
+  const limits = await getAiLimits(c.env)
   return c.json({
     ai_enabled: enabled,
     ai_provider: ai.provider,
     ai_model: ai.model,
     ai_baseUrl: ai.baseUrl,
     limits: {
-      global: c.env.AI_DAILY_CALL_LIMIT_GLOBAL,
-      user: c.env.AI_DAILY_CALL_LIMIT_PER_USER
+      global: limits.dailyGlobal,
+      user: limits.dailyPerUser,
+      rpm_global: limits.rpmGlobal
     }
   })
 })
@@ -200,6 +203,70 @@ function requireAdmin(user: any) {
 
 function todayKey() {
   return new Date().toISOString().slice(0, 10)
+}
+
+type AiLimits = {
+  dailyGlobal: number
+  dailyPerUser: number
+  rpmGlobal: number
+}
+
+const AI_LIMITS_MAX: AiLimits = {
+  dailyGlobal: 1000,
+  dailyPerUser: 100,
+  rpmGlobal: 10
+}
+
+function clampInt(v: any, min: number, max: number) {
+  const n = Number(v)
+  if (!Number.isFinite(n)) return min
+  const i = Math.floor(n)
+  if (i < min) return min
+  if (i > max) return max
+  return i
+}
+
+async function getAiLimits(env: any): Promise<AiLimits> {
+  // Defaults from env (backward compatible).
+  const fallback: AiLimits = {
+    dailyGlobal: clampInt(env?.AI_DAILY_CALL_LIMIT_GLOBAL, 0, AI_LIMITS_MAX.dailyGlobal),
+    dailyPerUser: clampInt(env?.AI_DAILY_CALL_LIMIT_PER_USER, 0, AI_LIMITS_MAX.dailyPerUser),
+    rpmGlobal: clampInt(env?.AI_RPM_LIMIT_GLOBAL, 0, AI_LIMITS_MAX.rpmGlobal)
+  }
+
+  if (!env?.KV) return fallback
+
+  try {
+    const raw = await env.KV.get('system:ai_limits')
+    if (!raw) return fallback
+    const parsed = JSON.parse(raw)
+    return {
+      dailyGlobal: clampInt(parsed?.dailyGlobal, 0, AI_LIMITS_MAX.dailyGlobal),
+      dailyPerUser: clampInt(parsed?.dailyPerUser, 0, AI_LIMITS_MAX.dailyPerUser),
+      rpmGlobal: clampInt(parsed?.rpmGlobal, 0, AI_LIMITS_MAX.rpmGlobal)
+    }
+  } catch {
+    return fallback
+  }
+}
+
+function minuteBucketKey() {
+  // Global minute bucket (no per-user dimension as requested).
+  return String(Math.floor(Date.now() / 60000))
+}
+
+async function tryConsumeAiRpmGlobal(KV: KVNamespace, rpmLimit: number) {
+  const limit = Number(rpmLimit) || 0
+  if (limit <= 0) return true
+
+  const bucket = minuteBucketKey()
+  const key = `ai_rpm:global:${bucket}`
+  const raw = await KV.get(key)
+  const current = raw ? Number(raw) : 0
+  if (current >= limit) return false
+  // TTL > 60s so slow clocks / delayed writes don't create gaps.
+  await KV.put(key, String(current + 1), { expirationTtl: 120 })
+  return true
 }
 
 async function getUsageCount(KV: KVNamespace, key: string) {
@@ -387,8 +454,13 @@ async function maybeRunAI(c: any, userId: string, url: string, title: string | u
   if (!(await isAiAvailable(c.env))) return null
   const current = item || await upsertBookmark(c.env.R2, userId, url, title)
   if (current?.aiCheckedAt) return { skipped: true, tags: current.aiTags || [] }
-  const allowed = await canUseAI(c.env.KV, userId, c.env.AI_DAILY_CALL_LIMIT_GLOBAL, c.env.AI_DAILY_CALL_LIMIT_PER_USER)
+  const limits = await getAiLimits(c.env)
+  const allowed = await canUseAI(c.env.KV, userId, limits.dailyGlobal, limits.dailyPerUser)
   if (!allowed) return { skipped: true, reason: 'limit' }
+
+  const rpmAllowed = await tryConsumeAiRpmGlobal(c.env.KV, limits.rpmGlobal)
+  if (!rpmAllowed) return { skipped: true, reason: 'rpm_limit' }
+
   const aiTags = await classifyWithAI(c, url, title)
   await markAIUsage(c.env.KV, userId)
   const updated = await setAiTags(c.env.R2, userId, url, aiTags)
@@ -514,8 +586,13 @@ app.post('/api/ai/classify', async (c) => {
   const item = await upsertBookmark(c.env.R2, user.id, url, title || undefined)
   if (item?.aiCheckedAt) return c.json({ ok: true, skipped: true, tags: item.aiTags || [] })
   if (!(await isAiAvailable(c.env))) return c.json({ ok: false, error: 'ai_unavailable' }, 503)
-  const allowed = await canUseAI(c.env.KV, user.id, c.env.AI_DAILY_CALL_LIMIT_GLOBAL, c.env.AI_DAILY_CALL_LIMIT_PER_USER)
+  const limits = await getAiLimits(c.env)
+  const allowed = await canUseAI(c.env.KV, user.id, limits.dailyGlobal, limits.dailyPerUser)
   if (!allowed) return c.json({ ok: false, error: 'ai_limit' }, 429)
+
+  const rpmAllowed = await tryConsumeAiRpmGlobal(c.env.KV, limits.rpmGlobal)
+  if (!rpmAllowed) return c.json({ ok: false, error: 'ai_rpm_limit' }, 429)
+
   const aiTags = await classifyWithAI(c, url, title || undefined)
   await markAIUsage(c.env.KV, user.id)
   const updated = await setAiTags(c.env.R2, user.id, url, aiTags)
@@ -578,6 +655,7 @@ app.get('/api/system/status', async (c) => {
   const logs = await getAiLogs(c.env.KV, user.id)
   const ai = await getAiPublicConfig(c.env)
   const aiEnabled = await isAiAvailable(c.env)
+  const limits = await getAiLimits(c.env)
   return c.json({
     ok: true,
     bookmarks: stats,
@@ -587,8 +665,9 @@ app.get('/api/system/status', async (c) => {
       model: ai.model,
       baseUrl: ai.baseUrl,
       limits: {
-        global: c.env.AI_DAILY_CALL_LIMIT_GLOBAL,
-        user: c.env.AI_DAILY_CALL_LIMIT_PER_USER
+        global: limits.dailyGlobal,
+        user: limits.dailyPerUser,
+        rpm_global: limits.rpmGlobal
       },
       usage,
       logs
@@ -670,6 +749,15 @@ app.post('/api/admin/ai-config', async (c) => {
 app.post('/api/admin/ai-config/test', async (c) => {
   const user = await getAuthUserFromRequest(c)
   if (!requireAdmin(user)) return c.json({ ok: false }, 403)
+
+  // If AI isn't configured, keep current behavior.
+  const ai = await getAiPublicConfig(c.env)
+  if (!ai.provider || ai.provider === 'none') return c.json({ ok: false, error: 'not_configured' }, 400)
+
+  const limits = await getAiLimits(c.env)
+  const rpmAllowed = await tryConsumeAiRpmGlobal(c.env.KV, limits.rpmGlobal)
+  if (!rpmAllowed) return c.json({ ok: false, error: 'ai_rpm_limit' }, 429)
+
   const result = await testAiConnection(c.env)
   if (!result.ok && result.error === 'not_configured') return c.json(result, 400)
   return c.json(result)
@@ -745,6 +833,13 @@ app.post('/api/admin/ai-config/test/batch', async (c) => {
   const results = [] as any[]
   for (const candidate of candidates) {
     // Sequential probing keeps behavior predictable and avoids upstream rate spikes.
+    if (candidate.provider && candidate.provider !== 'none') {
+      const rpmAllowed = await tryConsumeAiRpmGlobal(c.env.KV, limits.rpmGlobal)
+      if (!rpmAllowed) {
+        results.push({ provider: candidate.provider, ok: false, latencyMs: 0, error: 'rpm_limit' })
+        continue
+      }
+    }
     results.push(await probeAiCandidate(candidate))
   }
 
@@ -757,6 +852,28 @@ app.post('/api/admin/ai-config/test/batch', async (c) => {
     summary: { ok: okCount, failed: failCount },
     at: new Date().toISOString()
   })
+})
+
+app.get('/api/admin/ai-limits', async (c) => {
+  const user = await getAuthUserFromRequest(c)
+  if (!requireAdmin(user)) return c.json({ ok: false }, 403)
+  const limits = await getAiLimits(c.env)
+  return c.json({ ok: true, limits, max: AI_LIMITS_MAX })
+})
+
+app.post('/api/admin/ai-limits', async (c) => {
+  const user = await getAuthUserFromRequest(c)
+  if (!requireAdmin(user)) return c.json({ ok: false }, 403)
+  const body = await c.req.json()
+
+  const next: AiLimits = {
+    dailyGlobal: clampInt(body?.dailyGlobal, 0, AI_LIMITS_MAX.dailyGlobal),
+    dailyPerUser: clampInt(body?.dailyPerUser, 0, AI_LIMITS_MAX.dailyPerUser),
+    rpmGlobal: clampInt(body?.rpmGlobal, 0, AI_LIMITS_MAX.rpmGlobal)
+  }
+
+  await c.env.KV.put('system:ai_limits', JSON.stringify(next))
+  return c.json({ ok: true, limits: next })
 })
 
 export default app

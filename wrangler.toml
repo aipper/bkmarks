@@ -20,6 +20,7 @@ preview_bucket_name = "bkmarks-data-preview"
 [vars]
 AI_DAILY_CALL_LIMIT_GLOBAL = 1000
 AI_DAILY_CALL_LIMIT_PER_USER = 100
+AI_RPM_LIMIT_GLOBAL = 10
 ADMIN_RESET_TOKEN = "dev-reset-token-123"
 AI_PROVIDER = "none"
 OPENAI_BASE_URL = "https://api.openai.com/v1"
