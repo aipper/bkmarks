@@ -5,12 +5,23 @@ import { upsertBookmark, removeBookmark, listBookmarks, setAiTags, getBookmarkSt
 import { loadStatus, saveStatus, checkUrl } from './status'
 import { html, css } from './ui'
 import { js } from './ui_js'
-import { getAiPublicConfig, isAiAvailable, runAiChat } from './ai'
+import {
+  getAiPublicConfig,
+  isAiAvailable,
+  runAiChat,
+  saveAiConfig,
+  getAiConfigFull,
+  getAiConfigWithMeta,
+  testAiConnection,
+  probeAiCandidate,
+  type AiConfig,
+  type AiSecretUpdate,
+  type AiProbeCandidate
+} from './ai'
 
 type Bindings = {
   KV: KVNamespace
   R2: R2Bucket
-  AI: any
   AI_DAILY_CALL_LIMIT_GLOBAL: number
   AI_DAILY_CALL_LIMIT_PER_USER: number
   ADMIN_RESET_TOKEN: string
@@ -43,12 +54,14 @@ app.get('/', (c) => {
   return c.text('Bkmarks Server is running!')
 })
 
-app.get('/api/config', (c) => {
-  const ai = getAiPublicConfig(c.env)
+app.get('/api/config', async (c) => {
+  const ai = await getAiPublicConfig(c.env)
+  const enabled = await isAiAvailable(c.env)
   return c.json({
-    ai_enabled: isAiAvailable(c.env),
+    ai_enabled: enabled,
     ai_provider: ai.provider,
-    ai_model: (ai as any).model,
+    ai_model: ai.model,
+    ai_baseUrl: ai.baseUrl,
     limits: {
       global: c.env.AI_DAILY_CALL_LIMIT_GLOBAL,
       user: c.env.AI_DAILY_CALL_LIMIT_PER_USER
@@ -345,7 +358,7 @@ function detectAiRelay(url: string, title?: string) {
 }
 
 async function classifyWithAI(c: any, url: string, title?: string) {
-  if (!isAiAvailable(c.env)) return []
+  if (!(await isAiAvailable(c.env))) return []
   const prompt = `你是书签分类助手，请从固定白名单中选择2-3个中文标签，必须是主题/用途类标签，不要包含域名、路径、版本号。只返回JSON数组。白名单：${AI_TAG_WHITELIST.join('、')}。`
   const input = `标题: ${title || ''}\nURL: ${url}`
   let raw = ''
@@ -371,7 +384,7 @@ async function classifyWithAI(c: any, url: string, title?: string) {
 }
 
 async function maybeRunAI(c: any, userId: string, url: string, title: string | undefined, item?: any) {
-  if (!isAiAvailable(c.env)) return null
+  if (!(await isAiAvailable(c.env))) return null
   const current = item || await upsertBookmark(c.env.R2, userId, url, title)
   if (current?.aiCheckedAt) return { skipped: true, tags: current.aiTags || [] }
   const allowed = await canUseAI(c.env.KV, userId, c.env.AI_DAILY_CALL_LIMIT_GLOBAL, c.env.AI_DAILY_CALL_LIMIT_PER_USER)
@@ -500,7 +513,7 @@ app.post('/api/ai/classify', async (c) => {
   if (!url) return c.json({ ok: false, error: 'bad_request' }, 400)
   const item = await upsertBookmark(c.env.R2, user.id, url, title || undefined)
   if (item?.aiCheckedAt) return c.json({ ok: true, skipped: true, tags: item.aiTags || [] })
-  if (!isAiAvailable(c.env)) return c.json({ ok: false, error: 'ai_unavailable' }, 503)
+  if (!(await isAiAvailable(c.env))) return c.json({ ok: false, error: 'ai_unavailable' }, 503)
   const allowed = await canUseAI(c.env.KV, user.id, c.env.AI_DAILY_CALL_LIMIT_GLOBAL, c.env.AI_DAILY_CALL_LIMIT_PER_USER)
   if (!allowed) return c.json({ ok: false, error: 'ai_limit' }, 429)
   const aiTags = await classifyWithAI(c, url, title || undefined)
@@ -563,14 +576,16 @@ app.get('/api/system/status', async (c) => {
   const stats = await getBookmarkStats(c.env.R2, user.id)
   const usage = await getUsageSummary(c.env.KV, user.id)
   const logs = await getAiLogs(c.env.KV, user.id)
-  const ai = getAiPublicConfig(c.env)
+  const ai = await getAiPublicConfig(c.env)
+  const aiEnabled = await isAiAvailable(c.env)
   return c.json({
     ok: true,
     bookmarks: stats,
     ai: {
-      enabled: isAiAvailable(c.env),
+      enabled: aiEnabled,
       provider: ai.provider,
-      model: (ai as any).model,
+      model: ai.model,
+      baseUrl: ai.baseUrl,
       limits: {
         global: c.env.AI_DAILY_CALL_LIMIT_GLOBAL,
         user: c.env.AI_DAILY_CALL_LIMIT_PER_USER
@@ -578,6 +593,169 @@ app.get('/api/system/status', async (c) => {
       usage,
       logs
     }
+  })
+})
+
+app.get('/api/admin/ai-config', async (c) => {
+  const user = await getAuthUserFromRequest(c)
+  if (!requireAdmin(user)) return c.json({ ok: false }, 403)
+  const meta = await getAiConfigWithMeta(c.env.KV)
+  const config = meta.config || (await getAiConfigFull(c.env.KV))
+
+  // If there's no KV config, return the effective env-derived public config.
+  if (!config) {
+    const ai = await getAiPublicConfig(c.env)
+    return c.json({
+      ok: true,
+      needsReselect: false,
+      config: {
+        provider: ai.provider,
+        openaiModel: ai.provider === 'openai' || ai.provider === 'openai_compatible' ? ai.model : undefined,
+        openaiBaseUrl: ai.provider === 'openai' || ai.provider === 'openai_compatible' ? ai.baseUrl : undefined,
+        geminiModel: ai.provider === 'gemini' ? ai.model : undefined,
+        hasSecret: ai.hasSecret
+      }
+    })
+  }
+
+  return c.json({
+    ok: true,
+    needsReselect: meta.needsReselect,
+    message: meta.needsReselect ? '检测到历史 Workers AI 配置，已强制迁移为未启用（none）。请重新选择 Provider。' : undefined,
+    config: {
+      provider: config.provider,
+      openaiModel: config.openaiModel,
+      openaiBaseUrl: config.openaiBaseUrl,
+      geminiModel: config.geminiModel,
+      hasSecret: Boolean(config.openaiApiKey || config.geminiApiKey)
+    }
+  })
+})
+
+app.post('/api/admin/ai-config', async (c) => {
+  const user = await getAuthUserFromRequest(c)
+  if (!requireAdmin(user)) return c.json({ ok: false }, 403)
+  const body = await c.req.json()
+  const provider = (body?.provider || '').trim() as AiConfig['provider']
+
+  const validProviders: AiConfig['provider'][] = ['none', 'openai', 'openai_compatible', 'gemini']
+  if (!validProviders.includes(provider)) return c.json({ ok: false, error: 'invalid_provider' }, 400)
+
+  const config: AiConfig = { provider }
+  let secrets: AiSecretUpdate | undefined
+
+  if (provider === 'openai' || provider === 'openai_compatible') {
+    config.openaiModel = (body?.openaiModel || '').trim() || 'gpt-4o-mini'
+    config.openaiBaseUrl = (body?.openaiBaseUrl || '').trim() || 'https://api.openai.com/v1'
+
+    if (Object.prototype.hasOwnProperty.call(body, 'openaiApiKey')) {
+      const v = String(body?.openaiApiKey || '').trim()
+      secrets = { ...(secrets || {}), openaiApiKey: v ? v : null }
+    }
+  }
+
+  if (provider === 'gemini') {
+    config.geminiModel = (body?.geminiModel || '').trim() || 'gemini-1.5-flash'
+
+    if (Object.prototype.hasOwnProperty.call(body, 'geminiApiKey')) {
+      const v = String(body?.geminiApiKey || '').trim()
+      secrets = { ...(secrets || {}), geminiApiKey: v ? v : null }
+    }
+  }
+
+  await saveAiConfig(c.env.KV, config, secrets)
+  return c.json({ ok: true })
+})
+
+app.post('/api/admin/ai-config/test', async (c) => {
+  const user = await getAuthUserFromRequest(c)
+  if (!requireAdmin(user)) return c.json({ ok: false }, 403)
+  const result = await testAiConnection(c.env)
+  if (!result.ok && result.error === 'not_configured') return c.json(result, 400)
+  return c.json(result)
+})
+
+app.post('/api/admin/ai-config/test/batch', async (c) => {
+  const user = await getAuthUserFromRequest(c)
+  if (!requireAdmin(user)) return c.json({ ok: false }, 403)
+
+  let body: any = {}
+  try {
+    body = await c.req.json()
+  } catch {
+    body = {}
+  }
+
+  const includeNone = body?.includeNone !== false
+  const incoming: any[] = Array.isArray(body?.candidates) ? body.candidates : []
+
+  const stored = await getAiConfigFull(c.env.KV)
+  const envOpenaiKey = String(c.env.OPENAI_API_KEY || '').trim()
+  const envOpenaiModel = String(c.env.OPENAI_MODEL || '').trim()
+  const envOpenaiBaseUrl = String(c.env.OPENAI_BASE_URL || '').trim()
+  const envGeminiKey = String(c.env.GEMINI_API_KEY || '').trim()
+  const envGeminiModel = String(c.env.GEMINI_MODEL || '').trim()
+
+  const allowedProviders = new Set(['none', 'openai', 'openai_compatible', 'gemini'])
+
+  function buildCandidate(provider: AiProbeCandidate['provider'], override: any): AiProbeCandidate {
+    if (provider === 'openai' || provider === 'openai_compatible') {
+      const apiKey = String(override?.openaiApiKey || '').trim() || String(stored?.openaiApiKey || '').trim() || envOpenaiKey
+      const openaiModel = String(override?.openaiModel || '').trim() || String(stored?.openaiModel || '').trim() || envOpenaiModel || 'gpt-4o-mini'
+      const openaiBaseUrl = String(override?.openaiBaseUrl || '').trim() || String(stored?.openaiBaseUrl || '').trim() || envOpenaiBaseUrl || 'https://api.openai.com/v1'
+      return {
+        provider,
+        openaiApiKey: apiKey || undefined,
+        openaiModel,
+        openaiBaseUrl
+      }
+    }
+    if (provider === 'gemini') {
+      const apiKey = String(override?.geminiApiKey || '').trim() || String(stored?.geminiApiKey || '').trim() || envGeminiKey
+      const geminiModel = String(override?.geminiModel || '').trim() || String(stored?.geminiModel || '').trim() || envGeminiModel || 'gemini-1.5-flash'
+      return {
+        provider,
+        geminiApiKey: apiKey || undefined,
+        geminiModel
+      }
+    }
+    return { provider: 'none' }
+  }
+
+  let candidates: AiProbeCandidate[] = []
+  if (incoming.length > 0) {
+    for (const c0 of incoming) {
+      const providerRaw = String(c0?.provider || '').trim()
+      if (!allowedProviders.has(providerRaw)) continue
+      const provider = providerRaw as AiProbeCandidate['provider']
+      if (provider === 'none') {
+        candidates.push({ provider: 'none' })
+      } else {
+        candidates.push(buildCandidate(provider, c0))
+      }
+    }
+  } else {
+    candidates = [buildCandidate('openai', {}), buildCandidate('openai_compatible', {}), buildCandidate('gemini', {})]
+    if (includeNone) candidates.push({ provider: 'none' })
+  }
+
+  // Ensure provider none exists if requested.
+  if (includeNone && !candidates.some((cnd) => cnd.provider === 'none')) candidates.push({ provider: 'none' })
+
+  const results = [] as any[]
+  for (const candidate of candidates) {
+    // Sequential probing keeps behavior predictable and avoids upstream rate spikes.
+    results.push(await probeAiCandidate(candidate))
+  }
+
+  const okCount = results.filter((r) => r.ok).length
+  const failCount = results.length - okCount
+
+  return c.json({
+    ok: true,
+    results,
+    summary: { ok: okCount, failed: failCount },
+    at: new Date().toISOString()
   })
 })
 

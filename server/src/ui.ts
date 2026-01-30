@@ -78,7 +78,55 @@ export function html() {
                 <div class="page-grid">
                   <div class="status-card">
                     <div class="card-title">AI 配置</div>
-                    <div id="settingsAi" class="card-body">加载中...</div>
+                    <div id="settingsAi" class="card-body">
+                      <div class="ai-config-form">
+                        <div class="form-group">
+                          <label class="form-label">AI Provider</label>
+                          <select id="aiProvider" class="form-select">
+                            <option value="none">未启用（关闭 AI）</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="openai_compatible">OpenAI 兼容接口</option>
+                            <option value="gemini">Google Gemini</option>
+                          </select>
+                        </div>
+
+                        <div id="aiMigrationNotice" class="config-status error hidden"></div>
+
+                        <div id="openaiConfig" class="provider-config hidden">
+                          <div class="form-group">
+                            <label class="form-label">API Key</label>
+                            <input id="openaiApiKey" type="password" class="form-input" placeholder="sk-...">
+                          </div>
+                          <div class="form-group">
+                            <label class="form-label">模型名称</label>
+                            <input id="openaiModel" type="text" class="form-input" placeholder="gpt-4o-mini">
+                          </div>
+                          <div class="form-group">
+                            <label class="form-label">Base URL</label>
+                            <input id="openaiBaseUrl" type="text" class="form-input" placeholder="https://api.openai.com/v1">
+                          </div>
+                        </div>
+
+                        <div id="geminiConfig" class="provider-config hidden">
+                          <div class="form-group">
+                            <label class="form-label">API Key</label>
+                            <input id="geminiApiKey" type="password" class="form-input" placeholder="AIza...">
+                          </div>
+                          <div class="form-group">
+                            <label class="form-label">模型名称</label>
+                            <input id="geminiModel" type="text" class="form-input" placeholder="gemini-1.5-flash">
+                          </div>
+                        </div>
+
+                        <div class="form-actions">
+                          <button id="aiTestBtn" class="test-button" type="button">测试连接</button>
+                          <button id="aiBatchProbeBtn" class="test-button" type="button">批量探测</button>
+                          <button id="aiSaveBtn" class="save-button" type="button">保存配置</button>
+                        </div>
+                        <div id="aiConfigStatus" class="config-status"></div>
+                        <div id="aiProbeResults" class="probe-results"></div>
+                      </div>
+                    </div>
                   </div>
                   <div class="status-card">
                     <div class="card-title">使用策略</div>
@@ -190,20 +238,18 @@ export function html() {
 export function css() {
   return `@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;600;700&family=Noto+Serif+JP:wght@500;600;700&display=swap');
 :root{
-  --bg:#f4f6fb;
-  --bg-accent:#eef2f8;
-  --surface:#ffffff;
-  --surface-2:rgba(255,255,255,0.85);
-  --text:#111827;
-  --muted:#5b6472;
-  --primary:#2563eb;
-  --primary-strong:#1d4ed8;
-  --accent:#f97316;
-  --border:rgba(15,23,42,0.08);
-  --shadow:0 18px 40px rgba(15,23,42,0.12);
-  --shadow-soft:0 10px 30px rgba(15,23,42,0.08);
-  --shadow-card:0 16px 40px rgba(12,20,33,0.08);
-  --radius:18px;
+  --primary:#0a84ff;
+  --primary-strong:#0062cc;
+  --text:#0f172a;
+  --muted:#64748b;
+  --surface:rgba(255,255,255,0.85);
+  --surface-glass:rgba(255,255,255,0.72);
+  --border:rgba(148,163,184,0.35);
+  --border-strong:rgba(148,163,184,0.45);
+  --shadow:0 12px 32px rgba(12,20,33,0.12);
+  --shadow-soft:0 8px 24px rgba(12,20,33,0.08);
+  --shadow-glass:0 20px 40px rgba(12,20,33,0.08);
+  --font-sans:'SF Pro Text','SF Pro Icons','Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif
 }
 *{box-sizing:border-box}
 body{
@@ -226,11 +272,12 @@ header.topbar{
   gap:16px;
   margin:16px 24px 0;
   padding:14px 20px;
-  background:var(--surface-2);
-  border:1px solid var(--border);
+  background:rgba(255,255,255,0.85);
+  border:1px solid rgba(148,163,184,0.32);
   border-radius:999px;
-  backdrop-filter:blur(16px);
-  box-shadow:var(--shadow-soft);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  box-shadow:0 12px 28px rgba(12,20,33,0.07);
 }
 .brand{
   display:flex;
@@ -336,12 +383,13 @@ header.topbar{
   margin:0 auto;
 }
 .sidebar{
-  background:var(--surface-2);
-  border:1px solid var(--border);
+  background:rgba(255,255,255,0.78);
+  border:1px solid rgba(148,163,184,0.3);
   border-radius:calc(var(--radius) + 2px);
   padding:18px;
-  box-shadow:var(--shadow-soft);
-  backdrop-filter:blur(16px);
+  box-shadow:0 8px 32px rgba(12,20,33,0.06);
+  backdrop-filter:blur(24px);
+  -webkit-backdrop-filter:blur(24px);
   height:fit-content;
 }
 .section-title{
@@ -397,20 +445,40 @@ header.topbar{
   margin:8px 0 18px;
 }
 .page-title{
-  font-family:"Noto Serif JP","Times New Roman",serif;
-  font-size:20px;
-  font-weight:600;
+  font-size:28px;
+  font-weight:700;
+  color:var(--text);
+  margin-bottom:4px;
+  letter-spacing:-0.02em;
+  background:linear-gradient(135deg,var(--text) 0%,#475569 100%);
+  -webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.page-subtitle{
+  font-size:14px;
+  color:var(--muted);
+  letter-spacing:0.01em;
+  font-weight:500;
 }
 .page-subtitle{font-size:12px;color:var(--muted)}
 .page-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
 .status-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
 .status-logs{margin-top:16px}
 .status-card{
-  background:var(--surface);
-  border:1px solid var(--border);
-  border-radius:16px;
-  padding:16px;
-  box-shadow:var(--shadow-card);
+  background:rgba(255,255,255,0.82);
+  border:1px solid rgba(148,163,184,0.3);
+  border-radius:calc(var(--radius) + 2px);
+  padding:20px;
+  box-shadow:0 12px 28px rgba(12,20,33,0.07);
+  transition:transform 240ms ease,box-shadow 240ms ease,border-color 240ms ease;
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+}
+.status-card:hover{
+  transform:translateY(-1px);
+  box-shadow:0 14px 32px rgba(12,20,33,0.09);
+  border-color:rgba(148,163,184,0.35);
 }
 .card-title{font-weight:600;font-size:14px;margin-bottom:8px}
 .card-body{font-size:13px;color:var(--muted);line-height:1.6}
@@ -494,14 +562,15 @@ body.modal-open{overflow:hidden}
   backdrop-filter:blur(6px);
 }
 .modal-card{
-  position:relative;
-  width:min(860px,100%);
-  background:rgba(255,255,255,0.92);
-  border:1px solid rgba(148,163,184,0.25);
-  border-radius:18px;
-  box-shadow:var(--shadow);
-  padding:18px;
-  backdrop-filter:blur(16px);
+  background:rgba(255,255,255,0.94);
+  border:1px solid rgba(148,163,184,0.32);
+  border-radius:calc(var(--radius) + 2px);
+  padding:24px;
+  box-shadow:0 20px 48px rgba(12,20,33,0.1);
+  backdrop-filter:blur(20px);
+  -webkit-backdrop-filter:blur(20px);
+  max-width:360px;
+  margin:0 auto;
 }
 .confirm-card{width:min(520px,100%)}
 .confirm-body{
@@ -642,17 +711,20 @@ body.modal-open{overflow:hidden}
   box-shadow:0 12px 24px rgba(10,132,255,0.2);
 }
 .card{
-  position:relative;
-  background:var(--surface);
-  border:1px solid var(--border);
-  border-radius:16px;
-  padding:18px;
-  display:flex;
-  flex-direction:column;
-  gap:8px;
-  box-shadow:var(--shadow-card);
-  cursor:pointer;
-  transition:box-shadow 180ms ease,transform 180ms ease,border-color 180ms ease;
+  background:rgba(255,255,255,0.88);
+  border:1px solid rgba(148,163,184,0.32);
+  border-radius:calc(var(--radius) + 2px);
+  padding:20px;
+  box-shadow:0 12px 32px rgba(12,20,33,0.08);
+  transition:transform 240ms ease,box-shadow 240ms ease,border-color 240ms ease,background 240ms ease;
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+.card:hover{
+  transform:translateY(-2px);
+  box-shadow:0 16px 44px rgba(12,20,33,0.11);
+  border-color:rgba(148,163,184,0.38);
+  background:rgba(255,255,255,0.92);
 }
 .card::before{
   content:"";
@@ -766,12 +838,19 @@ body.modal-open{overflow:hidden}
   font-weight:500;
 }
 .panel{
-  background:var(--surface);
-  border:1px solid var(--border);
-  border-radius:18px;
-  padding:22px;
-  max-width:380px;
-  box-shadow:var(--shadow-soft);
+  background:rgba(255,255,255,0.85);
+  border:1px solid rgba(148,163,184,0.32);
+  border-radius:calc(var(--radius) + 2px);
+  padding:20px;
+  box-shadow:0 10px 28px rgba(12,20,33,0.07);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+}
+.panel-actions{
+  display:flex;
+  justify-content:flex-end;
+  gap:10px;
+  margin-top:20px;
 }
 .panel h2{margin:0 0 12px 0;font-size:20px;font-weight:700}
 .panel input{
@@ -796,6 +875,133 @@ body.modal-open{overflow:hidden}
 }
 .panel button:hover{filter:brightness(1.03)}
 .hidden{display:none}
+.ai-config-form{display:flex;flex-direction:column;gap:16px}
+.form-group{display:flex;flex-direction:column;gap:6px}
+.form-label{
+  font-size:12px;
+  font-weight:600;
+  color:var(--muted);
+  letter-spacing:0.02em;
+}
+.form-input,
+.form-select{
+  padding:10px 12px;
+  border:1px solid rgba(148,163,184,0.35);
+  border-radius:12px;
+  background:rgba(255,255,255,0.9);
+  font-size:13px;
+  transition:border-color 180ms ease,box-shadow 180ms ease;
+}
+.form-input:focus,
+.form-select:focus{
+  outline:none;
+  border-color:rgba(10,132,255,0.65);
+  box-shadow:0 0 0 3px rgba(10,132,255,0.12);
+}
+.provider-config{display:flex;flex-direction:column;gap:12px;padding-top:8px}
+.form-actions{
+  display:flex;
+  gap:10px;
+  margin-top:4px;
+}
+.test-button{
+  flex:1;
+  border:1px solid rgba(37,99,235,0.25);
+  background:rgba(37,99,235,0.08);
+  color:#1d4ed8;
+  border-radius:12px;
+  padding:10px 14px;
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+  transition:background 180ms ease,border-color 180ms ease;
+}
+.test-button:hover{
+  border-color:rgba(37,99,235,0.4);
+  background:rgba(37,99,235,0.12);
+}
+.test-button:disabled{
+  opacity:0.6;
+  cursor:default;
+}
+.save-button{
+  flex:1;
+  border:none;
+  background:linear-gradient(135deg,var(--primary),var(--primary-strong));
+  color:#fff;
+  border-radius:12px;
+  padding:10px 14px;
+  font-size:13px;
+  font-weight:600;
+  cursor:pointer;
+  box-shadow:0 12px 24px rgba(10,132,255,0.25);
+  transition:filter 180ms ease,transform 180ms ease;
+}
+.save-button:hover{
+  filter:brightness(1.03);
+  transform:translateY(-1px);
+}
+.save-button:disabled{
+  opacity:0.7;
+  cursor:default;
+  transform:none;
+}
+.config-status{
+  font-size:12px;
+  padding:10px 12px;
+  border-radius:10px;
+  background:rgba(248,250,252,0.9);
+  border:1px solid rgba(15,23,42,0.08);
+  min-height:40px;
+  display:flex;
+  align-items:center;
+}
+.config-status.success{
+  background:rgba(52,199,89,0.1);
+  border-color:rgba(52,199,89,0.25);
+  color:#16a34a;
+}
+.config-status.error{
+  background:rgba(255,59,48,0.1);
+  border-color:rgba(255,59,48,0.25);
+  color:#dc2626;
+}
+.config-status.loading{
+  background:rgba(37,99,235,0.1);
+  border-color:rgba(37,99,235,0.25);
+  color:#2563eb;
+}
+
+.probe-results{
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  padding:12px;
+  border-radius:12px;
+  background:rgba(255,255,255,0.7);
+  border:1px solid rgba(148,163,184,0.28);
+  min-height:16px;
+}
+.probe-row{
+  display:grid;
+  grid-template-columns:140px 90px 90px 1fr;
+  gap:10px;
+  align-items:center;
+  padding:10px 10px;
+  border-radius:10px;
+  background:rgba(248,250,252,0.8);
+  border:1px solid rgba(15,23,42,0.06);
+}
+.probe-row .probe-provider{font-weight:700;color:var(--text);font-size:12px;letter-spacing:0.02em;text-transform:uppercase}
+.probe-row .probe-status{font-size:12px;font-weight:700}
+.probe-row .probe-latency{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.probe-row .probe-error{font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.probe-row.ok .probe-status{color:#16a34a}
+.probe-row.fail .probe-status{color:#dc2626}
+@media (max-width: 640px){
+  .probe-row{grid-template-columns:1fr 80px 80px;}
+  .probe-row .probe-error{grid-column:1/-1;white-space:normal}
+}
 body.login main.shell{
   grid-template-columns:1fr;
   justify-items:center;

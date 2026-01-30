@@ -1,0 +1,16 @@
+spec_id,spec_title,spec_section,status,acceptance_criteria,dependencies,risk_level,notes
+REQ-001,Chrome扩展书签同步,3.1,DONE,扩展能读取书签树并监听变更事件,无,低,已实现
+REQ-002,服务端账号登录,2.2,DONE,支持用户名密码登录和Session管理,无,低,已实现
+REQ-003,书签同步API,2.3,DONE,POST /api/bookmarks/sync 接收扩展数据,REQ-002,低,已实现
+REQ-004,书签列表API,2.3,DONE,GET /api/bookmarks/list 返回导航数据,REQ-003,低,已实现
+REQ-005,Tag管理,2.3,DONE,GET /api/tags 返回Tag列表和统计,REQ-004,低,已实现
+REQ-006,基础规则分类,2.4,DONE,基于域名和文件夹生成Tag,REQ-004,低,已实现
+REQ-007,AI分类增强,2.4,DONE,调用AI进行文本分类,REQ-006,中,已实现
+REQ-008,AI配额控制,2.4,DONE,KV计数控制每日调用次数,REQ-007,低,已实现
+REQ-009,链接有效性检测,2.5,DONE,Cron定时检测链接状态,REQ-004,中,已实现
+REQ-010,导航UI首页,4.2,DONE,显示书签卡片和Tag筛选,REQ-004/REQ-005,低,已实现
+REQ-011,管理员AI配置API,2.4.1,READY,GET/POST /api/admin/ai-config 接口,REQ-002,中,需实现
+REQ-012,管理员AI配置UI,2.4.1,READY,导航页添加AI设置页面,REQ-010,低,需实现
+REQ-013,AI配置KV存储,2.4.1,READY,存储配置和密钥到KV,REQ-011,低,需实现
+REQ-014,AI配置优先级,2.4.1,READY,KV配置优先于环境变量,REQ-013,低,需实现
+REQ-015,AI配置测试,2.4.1,READY,支持测试AI连通性,REQ-011,低,需实现

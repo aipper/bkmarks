@@ -93,11 +93,11 @@ npx wrangler deploy
 
 ## 注意
 - R2/KV 绑定必须在 wrangler.toml 与 Dashboard 配置一致
-- Workers AI 接入（分类）建议按照每日调用配额进行自我限流
+- AI 接入（分类）建议按照每日调用配额进行自我限流
 - 生产环境请将 `ADMIN_RESET_TOKEN` 设置为高强度随机值
 
 ## AI Provider（可选）
-默认使用 Cloudflare Workers AI（需要 `wrangler.toml` 里的 `[ai] binding = "AI"`）。
+默认 `AI_PROVIDER=none`（关闭）。可在 `/app/settings` 中由管理员启用并配置 OpenAI / Gemini / OpenAI 兼容接口，或通过环境变量配置。
 
 也支持切换到第三方大模型 API（不把密钥写进仓库）：
 

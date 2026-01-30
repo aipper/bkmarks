@@ -7,7 +7,7 @@
 2. **服务端（Cloudflare Workers）**：提供多用户账号体系、API 接口、AI 智能分类、链接有效性检测以及导航前端页面。
 
 **核心约束**：
-- 基于 Cloudflare 免费计划（Workers + KV + R2 + Workers AI）实现。
+- 基于 Cloudflare 免费计划（Workers + KV + R2）实现。
 - 支持多用户，但以个人/小规模使用为主。
 - 导航 UI 追求简约美观（参考 Apple Human Interface Guidelines）。
 
@@ -21,8 +21,9 @@
   - 存储用户信息、会话 Session、系统配置、AI 每日调用计数。
 - **对象存储**：R2
   - 存储用户的书签数据（原始结构 + AI 分类结果 + 链接状态）。
-- **AI 能力**：Workers AI (免费额度)
-  - 用于书签标题/URL 的智能分类。
+- **AI 能力**：可配置外部 AI Provider（默认关闭）
+  - 支持 OpenAI / Gemini / OpenAI 兼容接口。
+  - 默认 Provider 为 `none`（fail-closed），必须由管理员显式启用。
 
 ### 2.2 账号体系
 - **登录方式**：账号 + 密码。
@@ -44,13 +45,81 @@
   - `GET /api/config`：获取当前配置（如是否开启 AI 等）。
 
 ### 2.4 AI 分类与配额管理
-- **分类策略**：
-  - **基础规则**：基于域名（如 github.com -> 代码）和 Chrome 文件夹名称自动生成 Tag。
-  - **AI 增强**：对未分类或新书签，调用 Workers AI 进行文本分类。
-- **配额控制**：
-  - 服务端环境变量配置每日最大调用次数（全局 + 单用户）。
-  - 使用 KV (`ai_usage:yyyy-mm-dd`) 实时计数。
-  - 超出配额时自动降级为仅使用规则分类。
+
+#### 2.4.1 AI Provider 配置
+
+**配置方式**：
+- **方式一（推荐）**：通过管理员 UI 动态配置（无需重新部署）
+  - 访问 `/app` → "AI 设置"（仅管理员可见）
+  - 选择 Provider：none / openai / openai_compatible / gemini
+  - 配置参数：模型名称、API Base URL、API Key
+  - 支持实时测试 AI 连通性
+- **方式二（兼容）**：通过 `wrangler.toml` 环境变量配置
+  - 适用于部署时固定配置
+  - 修改后需重新部署：`npx wrangler deploy`
+
+**配置优先级**：KV 动态配置 > wrangler.toml 环境变量
+
+**安全机制**：
+- API 密钥加密存储在 KV（`system:ai_secret`）
+- API 接口不返回密钥
+- 仅管理员可修改配置
+- 配置变更审计（建议）
+
+**管理员 API**：
+- `GET /api/admin/ai-config`：获取当前 AI 配置（不含密钥）
+  ```json
+  {
+    "ok": true,
+    "config": {
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "baseUrl": "https://api.openai.com/v1",
+      "hasSecret": true
+    }
+  }
+  ```
+- `POST /api/admin/ai-config`：更新 AI 配置
+  ```json
+  {
+    "provider": "openai",
+    "model": "gpt-4o-mini",
+    "baseUrl": "https://api.openai.com/v1",
+    "apiKey": "sk-xxx"
+  }
+  ```
+  响应：
+  ```json
+  { "ok": true }
+  ```
+  错误：
+  - 403：非管理员
+  - 400：配置无效
+  - 503：AI 测试失败（可选）
+
+**支持 Provider**：
+- `none`：未启用（关闭 AI）
+- `openai`：OpenAI 官方 API
+- `openai_compatible`：OpenAI 兼容接口（如 NewAPI）
+- `gemini`：Google Gemini
+
+**默认配置**（未配置时使用）：
+- `none`：默认关闭
+- `openai`：gpt-4o-mini
+- `gemini`：gemini-1.5-flash
+
+**兼容性/迁移**：
+- 已移除 Cloudflare Workers AI 支持。
+- 若历史 KV 配置中存在 `provider="workers"`，服务端会强制迁移为 `provider="none"` 并提示管理员重新选择。
+
+#### 2.4.2 分类策略
+- **基础规则**：基于域名（如 github.com -> 代码）和 Chrome 文件夹名称自动生成 Tag。
+- **AI 增强**：对未分类或新书签，调用 AI 进行文本分类。
+
+#### 2.4.3 配额控制
+- 服务端环境变量配置每日最大调用次数（全局 + 单用户）。
+- 使用 KV (`ai_usage:yyyy-mm-dd`) 实时计数。
+- 超出配额时自动降级为仅使用规则分类。
 
 ### 2.5 链接有效性检测
 - **机制**：利用 Workers Cron Triggers 定时触发。

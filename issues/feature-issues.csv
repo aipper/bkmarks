@@ -1,0 +1,7 @@
+issue_id,summary,spec_id,type,priority,status,acceptance_criteria,verification_command,evidence_path,dependencies,risk_level,estimated_effort
+FEAT-001,实现GET /api/admin/ai-config接口,REQ-011,API,medium,READY,返回当前AI配置不含密钥,curl -H "Cookie: session=xxx" http://localhost:8787/api/admin/ai-config,.agentdocs/tmp/ai-config-get.log,REQ-002,medium,2h
+FEAT-002,实现POST /api/admin/ai-config接口,REQ-011,API,medium,READY,更新AI配置并存储到KV,curl -X POST -H "Content-Type: application/json" -d '{"provider":"openai","model":"gpt-4o-mini","baseUrl":"https://api.openai.com/v1","apiKey":"sk-xxx"}' -H "Cookie: session=xxx" http://localhost:8787/api/admin/ai-config,.agentdocs/tmp/ai-config-post.log,FEAT-001,high,3h
+FEAT-003,实现AI配置KV存储逻辑,REQ-013,storage,low,READY,配置存储到system:ai_config,密钥加密存储到system:ai_secret,cat .agentdocs/tmp/kv-ai-config.log,.agentdocs/tmp/kv-ai-config.log,FEAT-002,low,2h
+FEAT-004,实现getAiProvider配置优先级逻辑,REQ-014,logic,low,READY,KV配置优先于环境变量,cat .agentdocs/tmp/ai-provider-priority.log,.agentdocs/tmp/ai-provider-priority.log,FEAT-003,low,1h
+FEAT-005,实现AI配置UI页面,REQ-012,UI,low,READY,导航页添加AI设置页面,支持Provider选择和参数配置,打开 http://localhost:8787/app 并点击AI设置菜单,.agentdocs/tmp/ai-config-ui.png,REQ-010,low,4h
+FEAT-006,实现AI连通性测试,REQ-015,feature,low,READY,配置页面支持测试AI连接,curl -X POST /api/admin/ai-config/test -H "Cookie: session=xxx",.agentdocs/tmp/ai-test-connection.log,FEAT-002,medium,2h
