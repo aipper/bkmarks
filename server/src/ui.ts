@@ -875,6 +875,8 @@ body.modal-open{overflow:hidden}
 }
 .panel button:hover{filter:brightness(1.03)}
 .hidden{display:none}
+/* Ensure provider sections can be hidden even though .provider-config sets display:flex. */
+.provider-config.hidden{display:none}
 .ai-config-form{display:flex;flex-direction:column;gap:16px}
 .form-group{display:flex;flex-direction:column;gap:6px}
 .form-label{
